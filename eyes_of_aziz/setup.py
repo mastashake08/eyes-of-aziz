@@ -150,7 +150,34 @@ def run_wizard(io: WizardIO | None = None) -> int:
 
 
 def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="eyes-of-aziz-setup",
+        description="Log in, scan the network for cameras, and register the ones you pick.",
+    )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="Open a local web dashboard in your browser instead of prompting in the terminal.",
+    )
+    parser.add_argument("--host", default="127.0.0.1", help="Web dashboard bind address (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=5151, help="Web dashboard port (default: 5151)")
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="With --web, don't automatically open a browser tab.",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(level="INFO", format="%(message)s")
+
+    if args.web:
+        from .webapp import run_web
+
+        run_web(host=args.host, port=args.port, open_browser=not args.no_browser)
+        return 0
+
     return run_wizard()
 
 

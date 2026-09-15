@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Log in — Eyes Of Aziz{% endblock %}
+{% block content %}
+<div class="panel">
+    <h2>Log in to your Project Aziz account</h2>
+    <p class="hint">This is your Project Aziz account login, not a camera's own login — you'll enter each camera's own credentials separately, later.</p>
+
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('do_login') }}">
+        <label for="backend_url">Backend URL</label>
+        <input type="url" id="backend_url" name="backend_url" value="{{ backend_url }}" required>
+
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" autocomplete="username" required autofocus>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+        <button type="submit">Log in</button>
+    </form>
+</div>
+{% endblock %}

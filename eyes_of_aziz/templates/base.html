@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Eyes Of Aziz{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="page">
+        <header class="app-header">
+            <div>
+                <h1>Eyes Of Aziz</h1>
+                <div class="subtitle">Camera setup for Project Aziz</div>
+            </div>
+            {% block header_actions %}{% endblock %}
+        </header>
+
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

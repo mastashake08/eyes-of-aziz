@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Confirm camera — Eyes Of Aziz{% endblock %}
+{% block content %}
+
+<div class="panel">
+    <h2>Confirmed camera</h2>
+    <div class="success">
+        {{ [details.manufacturer, details.model] | select | join(' ') or 'Camera' }}
+        — <code>{{ details.rtsp_url }}</code>
+    </div>
+
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('register_camera', index=index) }}">
+        <label for="device_id">Name this camera</label>
+        <input type="text" id="device_id" name="device_id" placeholder="{{ default_id }}" value="{{ default_id }}">
+        <p class="hint">This becomes its device ID with Project Aziz — pick something you'll recognize later.</p>
+
+        <button type="submit">Register with Project Aziz</button>
+        <a class="button secondary" href="{{ url_for('cameras') }}">Cancel</a>
+    </form>
+</div>
+
+{% endblock %}

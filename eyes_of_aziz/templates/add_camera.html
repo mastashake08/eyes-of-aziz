@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Add camera — Eyes Of Aziz{% endblock %}
+{% block content %}
+
+<div class="panel">
+    <h2>{{ device.host }}:{{ device.port }}</h2>
+    <p class="hint">Enter this camera's own admin username/password (its local login — not your Project Aziz account) so we can confirm it's a camera and read its stream URL.</p>
+
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('add_camera', index=index) }}">
+        <label for="username">Camera username</label>
+        <input type="text" id="username" name="username" autocomplete="off">
+
+        <label for="password">Camera password</label>
+        <input type="password" id="password" name="password" autocomplete="off">
+
+        <button type="submit">Add this device</button>
+        <a class="button secondary" href="{{ url_for('cameras') }}">Cancel</a>
+    </form>
+</div>
+
+{% endblock %}

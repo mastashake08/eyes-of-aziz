@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Cameras — Eyes Of Aziz{% endblock %}
+{% block header_actions %}
+<form method="post" action="{{ url_for('logout') }}">
+    <button type="submit" class="secondary" style="margin-top:0;">Log out</button>
+</form>
+{% endblock %}
+{% block content %}
+
+<div class="panel">
+    <h2>Scan for cameras</h2>
+    <p class="hint">Looks for ONVIF-capable cameras on this network. Not every result will turn out to be a camera — you'll confirm each one before it's added.</p>
+    <form method="post" action="{{ url_for('scan') }}">
+        <button type="submit">Scan network</button>
+    </form>
+
+    {% if scan_error %}<div class="error" style="margin-top:16px;">{{ scan_error }}</div>{% endif %}
+
+    {% if devices %}
+        <div style="margin-top:20px;">
+        {% for index, device in devices %}
+            <div class="device-card">
+                <div>
+                    <div>{{ device.host }}:{{ device.port }}</div>
+                    <div class="device-meta">{{ device.xaddr }}</div>
+                    {% if index in probe_errors %}
+                        <div class="error" style="margin-top:8px; margin-bottom:0;">{{ probe_errors[index] }}</div>
+                    {% endif %}
+                </div>
+                {% if index in registered_indices %}
+                    <span class="badge registered">Registered</span>
+                {% elif index in probed %}
+                    <a class="button" href="{{ url_for('confirm_camera_form', index=index) }}">Continue</a>
+                {% else %}
+                    <a class="button secondary" href="{{ url_for('add_camera_form', index=index) }}">Add this device</a>
+                {% endif %}
+            </div>
+        {% endfor %}
+        </div>
+    {% elif scan_error is none %}
+        {% if has_scanned %}
+            <p class="empty-state" style="margin-top:20px;">No devices responded. Make sure the camera is powered on and on the same network/VLAN as this machine.</p>
+        {% else %}
+            <p class="empty-state" style="margin-top:20px;">No scan yet — click "Scan network" to look for cameras.</p>
+        {% endif %}
+    {% endif %}
+</div>
+
+<div class="panel">
+    <h2>Registered cameras</h2>
+    {% if registered %}
+        {% for camera in registered %}
+            <div class="device-card">
+                <div>
+                    <div>{{ camera.device_id }}</div>
+                    <div class="device-meta">{{ camera.rtsp_url }}</div>
+                </div>
+            </div>
+            <p class="hint">Run it with: <code>eyes-of-aziz-bridge --env-file {{ camera.config_path }}</code></p>
+        {% endfor %}
+    {% else %}
+        <p class="empty-state">None yet.</p>
+    {% endif %}
+</div>
+
+{% endblock %}
