@@ -22,24 +22,9 @@ one frame in memory at a time before uploading it.
 ## Requirements
 
 - Python 3.10+
-- An RTSP-capable camera reachable from wherever this runs
-- A `device_id` and `registration_token` for that camera (see below)
-
-## Getting a device_id and registration_token
-
-The backend's UI for registering a camera isn't built yet, so for now, register directly against
-the API with a Sanctum-authenticated account:
-
-```bash
-curl -X POST https://projectaziz.com/api/field-devices/register \
-  -H "Authorization: Bearer <your-sanctum-token>" \
-  -H "Accept: application/json" \
-  -F "device_id=front-door-camera-1" \
-  -F "device_type=camera_bridge"
-```
-
-The response includes the `device_id` and `registration_token` you'll put in `.env`. Keep the
-token secret — anyone with it can upload frames as this camera.
+- One or more ONVIF-capable cameras on the same local network as wherever this runs (most modern
+  IP cameras — Hikvision, Dahua, Reolink, etc. — support ONVIF; a plain USB webcam doesn't)
+- A Project Aziz account
 
 ## Install
 
@@ -49,25 +34,55 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-## Configure
+## Setup: find and register your cameras
 
 ```bash
-cp .env.example .env
+eyes-of-aziz-setup
 ```
 
-Fill in `EYES_OF_AZIZ_BACKEND_URL`, `EYES_OF_AZIZ_DEVICE_ID`, `EYES_OF_AZIZ_REGISTRATION_TOKEN`,
-and `EYES_OF_AZIZ_RTSP_URL`. Everything else in `.env.example` is optional tuning with sane
-defaults — see the comments there.
+This is the easiest way to get going — an interactive wizard that:
+
+1. Logs you into your Project Aziz account (`POST /api/login`, the same one the mobile app uses).
+2. Scans the local network for ONVIF cameras (WS-Discovery). Note this only finds *candidates* —
+   other WS-Discovery-speaking hardware (printers, NVRs, etc.) can show up too, which is why the
+   next step exists.
+3. For each one you choose to add, asks for *that camera's own* admin username/password — its
+   local login, separate from your Project Aziz account — and confirms it's really an ONVIF
+   camera by querying it directly and reading back its actual RTSP stream URL (rather than
+   guessing at a brand-specific stream path).
+4. Registers it with Project Aziz and writes `cameras/<name>.env`, ready to run.
+
+If your camera doesn't support ONVIF, or isn't visible to WS-Discovery for some reason (routed
+subnets, camera-side settings, etc.), you can still register it manually and fill in its RTSP URL
+by hand:
+
+```bash
+curl -X POST https://projectaziz.com/api/field-devices/register \
+  -H "Authorization: Bearer <your-sanctum-token>" \
+  -H "Accept: application/json" \
+  -F "device_id=front-door-camera-1" \
+  -F "device_type=camera_bridge"
+```
+
+Then copy `.env.example` to `cameras/<name>.env` and fill in the response's `device_id`/
+`registration_token` plus the camera's RTSP URL yourself.
+
+Either way: keep the registration token secret — anyone with it can upload frames as that camera.
 
 ## Run
 
+One bridge process per camera, each pointed at that camera's config file:
+
 ```bash
-python -m eyes_of_aziz
-# or, after `pip install -e .`:
-eyes-of-aziz-bridge
+eyes-of-aziz-bridge --env-file cameras/front-door-camera-1.env
 ```
 
-Stop it with Ctrl+C (or `SIGTERM`); it shuts down cleanly between capture cycles.
+Running more than one camera means running this once per camera (e.g. as separate systemd units
+or supervisor programs). Stop a bridge with Ctrl+C (or `SIGTERM`); it shuts down cleanly between
+capture cycles.
+
+`.env.example` documents optional tuning (capture interval, JPEG quality, retry/backoff settings)
+that applies to every camera's config file.
 
 ## How it works
 

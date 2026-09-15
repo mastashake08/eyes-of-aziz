@@ -1,7 +1,6 @@
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 
 from eyes_of_aziz.api_client import DeviceRejectedError
 from eyes_of_aziz.bridge import CameraBridge
@@ -36,7 +35,7 @@ class FakeCapture:
             return False, None
         return self._reads.pop(0)
 
-    def isOpened(self):  # noqa: N802 - matches cv2's API
+    def isOpened(self):
         return True
 
     def release(self):

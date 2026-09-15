@@ -7,8 +7,8 @@ registered via POST /api/field-devices/register.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 REQUIRED_VARS = (
     "EYES_OF_AZIZ_BACKEND_URL",
@@ -36,7 +36,7 @@ class BridgeConfig:
     max_reconnect_backoff_seconds: float = 60.0
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str]) -> "BridgeConfig":
+    def from_env(cls, env: Mapping[str, str]) -> BridgeConfig:
         missing = [name for name in REQUIRED_VARS if not env.get(name)]
         if missing:
             raise ConfigError(

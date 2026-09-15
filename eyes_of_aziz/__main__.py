@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import signal
@@ -15,12 +16,34 @@ from .config import BridgeConfig, ConfigError
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="eyes-of-aziz-bridge",
+        description="Pulls frames from one RTSP camera and forwards them to Project Aziz.",
+    )
+    parser.add_argument(
+        "--env-file",
+        metavar="PATH",
+        help=(
+            "Path to this camera's config file (default: .env in the current "
+            "directory). Running more than one camera means running this "
+            "once per camera, each with its own --env-file -- see "
+            "`eyes-of-aziz-setup`, which generates one under cameras/ per "
+            "camera you register."
+        ),
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(
         level=os.environ.get("EYES_OF_AZIZ_LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    load_dotenv()
+    if args.env_file:
+        if not load_dotenv(args.env_file):
+            logging.getLogger(__name__).error("Could not read env file: %s", args.env_file)
+            return 1
+    else:
+        load_dotenv()
 
     try:
         config = BridgeConfig.from_env(os.environ)

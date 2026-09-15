@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from datetime import datetime, timezone
 
 import cv2
@@ -87,13 +86,12 @@ class CameraBridge:
             self._client.send_frame(jpeg_bytes, captured_at)
             return True
         except DeviceRejectedError:
-            logger.error(
+            logger.exception(
                 "Device rejected by backend -- check EYES_OF_AZIZ_DEVICE_ID/"
                 "EYES_OF_AZIZ_REGISTRATION_TOKEN, or that this camera is still "
-                "active and shared with law enforcement. Stopping.",
-                exc_info=True,
+                "active and shared with law enforcement. Stopping."
             )
             return False
-        except Exception:  # noqa: BLE001 - a single bad frame shouldn't kill the bridge
-            logger.error("Failed to upload frame, will try again next capture", exc_info=True)
+        except Exception:
+            logger.exception("Failed to upload frame, will try again next capture")
             return True
