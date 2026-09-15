@@ -22,12 +22,26 @@ one frame in memory at a time before uploading it.
 
 ## Requirements
 
-- Python 3.10+
 - One or more ONVIF-capable cameras on the same local network as wherever this runs (most modern
   IP cameras — Hikvision, Dahua, Reolink, etc. — support ONVIF; a plain USB webcam doesn't)
 - A Project Aziz account
 
-## Install
+## Download (Windows / macOS)
+
+No Python install needed — grab the latest build for your OS from
+[**Releases**](https://github.com/mastashake08/eyes-of-aziz/releases/latest), unzip it, and run
+`eyes-of-aziz-setup` to open the setup dashboard in your browser.
+
+These builds aren't code-signed yet, so your OS will warn you the first time you run one:
+
+- **Windows**: SmartScreen says "Windows protected your PC" — click **More info**, then **Run
+  anyway**.
+- **macOS**: Gatekeeper blocks it outright on a plain double-click. Right-click (or Control-click)
+  the app and choose **Open**, then confirm **Open** in the dialog — this only needs doing once.
+
+## Install from source (any OS, incl. Linux)
+
+Requires Python 3.10+.
 
 ```bash
 python3 -m venv .venv
@@ -87,6 +101,12 @@ One bridge process per camera, each pointed at that camera's config file:
 eyes-of-aziz-bridge --env-file cameras/front-door-camera-1.env
 ```
 
+If you only registered one camera, you can also just run `eyes-of-aziz-bridge` with no arguments
+from the folder that has your `cameras/` directory in it — it'll find and use that one config
+automatically (this is what makes the downloaded build usable without a terminal argument: double
+click it after registering exactly one camera). With more than one, it'll list them and ask you to
+pick via `--env-file`.
+
 Running more than one camera means running this once per camera (e.g. as separate systemd units
 or supervisor programs). Stop a bridge with Ctrl+C (or `SIGTERM`); it shuts down cleanly between
 capture cycles.
@@ -112,3 +132,17 @@ that applies to every camera's config file.
 pip install -e ".[dev]"
 pytest
 ```
+
+## Building the desktop apps
+
+```bash
+pip install -e ".[build]"
+pyinstaller packaging/eyes_of_aziz.spec --distpath dist --noconfirm
+```
+
+Produces `dist/eyes-of-aziz-setup` and `dist/eyes-of-aziz-bridge`, standalone (no Python needed to
+run them). PyInstaller doesn't cross-compile — this only builds for whatever OS you run it on.
+`.github/workflows/build-desktop-apps.yml` builds both Windows and macOS on every push and, when
+you push a `v*.*.*` tag, also creates a GitHub Release with each platform's build zipped up and
+attached — that's the Releases page linked above, and what the website's download link should
+point at.

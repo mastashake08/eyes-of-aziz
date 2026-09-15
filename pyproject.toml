@@ -24,6 +24,9 @@ dev = [
     "requests-mock>=1.12,<2",
     "ruff>=0.6,<1",
 ]
+build = [
+    "pyinstaller>=6.10,<7",
+]
 
 [project.scripts]
 eyes-of-aziz-bridge = "eyes_of_aziz.__main__:main"
