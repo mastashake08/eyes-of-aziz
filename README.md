@@ -104,24 +104,40 @@ Either way: keep the registration token secret — anyone with it can upload fra
 
 ## Run
 
-One bridge process per camera, each pointed at that camera's config file:
+Run every camera you've registered, in one process:
 
 ```bash
-eyes-of-aziz-bridge --env-file cameras/front-door-camera-1.env
+eyes-of-aziz-bridge --all
 ```
 
-If you only registered one camera, you can also just run `eyes-of-aziz-bridge` with no arguments
-from the folder that has your `cameras/` directory in it — it'll find and use that one config
-automatically (this is what makes the downloaded build usable without a terminal argument: double
-click it after registering exactly one camera). With more than one, it'll list them and ask you to
-pick via `--env-file`.
+That's also what happens when you run `eyes-of-aziz-bridge` (or double-click the downloaded
+build) from the folder that has your `cameras/` directory and more than one camera in it. To run
+just one camera, use `--env-file cameras/front-door-camera-1.env`. A camera that crashes is
+restarted after 10 seconds; one that Project Aziz rejects (bad token, deactivated) is left
+stopped until you fix it. Stop with Ctrl+C (or `SIGTERM`).
 
-Running more than one camera means running this once per camera (e.g. as separate systemd units
-or supervisor programs). Stop a bridge with Ctrl+C (or `SIGTERM`); it shuts down cleanly between
-capture cycles.
+### Start automatically
 
-`.env.example` documents optional tuning (capture interval, JPEG quality, retry/backoff settings)
-that applies to every camera's config file.
+```bash
+eyes-of-aziz-bridge --install-service      # or the "Start automatically" button in setup
+eyes-of-aziz-bridge --uninstall-service
+```
+
+Installs a per-user background service that runs `--all` and restarts it if it stops: a launchd
+agent on macOS (log in `~/Library/Logs/eyes-of-aziz.log`), a systemd user unit on Linux, or a
+logon task on Windows. No administrator rights needed. On Linux, run
+`loginctl enable-linger $USER` too if it should run when nobody is logged in.
+
+### Status page
+
+While running, the bridge serves a status page at <http://127.0.0.1:5152/> (`--status-port` to
+change it, `--no-status-page` to turn it off; JSON at `/status.json`). For each camera it shows
+whether it's online or can't reach the camera, when it last sent a face and reported in, frame
+counts, a missing location, and the last error. Like the setup dashboard, it's only reachable
+from the same machine.
+
+`.env.example` documents optional tuning (capture interval, face detection, heartbeat, JPEG
+quality, retry/backoff settings) that applies to every camera.
 
 ## How it works
 

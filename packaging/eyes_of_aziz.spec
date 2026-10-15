@@ -33,9 +33,12 @@ setup_analysis = Analysis(  # noqa: F821 - injected by PyInstaller
     pathex=[str(REPO_ROOT)],
     datas=setup_datas,
 )
-# The bridge detects faces before uploading (faces.py), so it needs the model.
+# The bridge detects faces before uploading (faces.py), so it needs the
+# model, and serves the status page (status_page.py), so its templates too.
 bridge_datas = [
     (str(REPO_ROOT / "eyes_of_aziz" / "models"), "eyes_of_aziz/models"),
+    (str(REPO_ROOT / "eyes_of_aziz" / "templates"), "eyes_of_aziz/templates"),
+    (str(REPO_ROOT / "eyes_of_aziz" / "static"), "eyes_of_aziz/static"),
 ]
 
 bridge_analysis = Analysis(  # noqa: F821

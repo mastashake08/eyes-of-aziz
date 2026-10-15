@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Camera status — Eyes Of Aziz{% endblock %}
+{% block content %}
+<meta http-equiv="refresh" content="10">
+
+<div class="panel">
+    <h2>Cameras</h2>
+    <p class="hint">Updates every 10 seconds. Eyes Of Aziz {{ version }}.</p>
+
+    {% if cameras %}
+        {% for camera in cameras %}
+            <div class="device-card">
+                <div>
+                    <div>{{ camera.device_id }}</div>
+                    <div class="device-meta">
+                        Last face sent {{ camera.uploaded_ago }} · reported in {{ camera.reported_ago }}
+                        · {{ camera.frames_captured or 0 }} frames, {{ camera.frames_with_faces or 0 }} with faces, {{ camera.uploads or 0 }} sent
+                        {% if not camera.has_location %}· <strong>no location set</strong>{% endif %}
+                    </div>
+                    {% if camera.last_error %}
+                        <div class="error" style="margin-top:8px; margin-bottom:0;">{{ camera.last_error }}</div>
+                    {% endif %}
+                </div>
+                <span class="badge state-{{ camera.state }}">{{ camera.label }}</span>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p class="empty-state">No cameras are configured. Run <code>eyes-of-aziz-setup</code> to add one.</p>
+    {% endif %}
+</div>
+{% endblock %}

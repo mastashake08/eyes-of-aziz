@@ -56,8 +56,16 @@
                     <div class="device-meta">{{ camera.rtsp_url }}</div>
                 </div>
             </div>
-            <p class="hint">Run it with: <code>eyes-of-aziz-bridge --env-file {{ camera.config_path }}</code></p>
         {% endfor %}
+
+        <h2 style="margin-top:24px;">Start them</h2>
+        <p class="hint">Run every registered camera in the background, starting automatically when this computer starts or you log in. You can check on them any time at <a href="http://127.0.0.1:5152/">127.0.0.1:5152</a>.</p>
+        {% if service_message %}<div class="success">{{ service_message }}</div>{% endif %}
+        {% if service_error %}<div class="error">{{ service_error }}</div>{% endif %}
+        <form method="post" action="{{ url_for('install_service') }}">
+            <button type="submit">Start automatically</button>
+        </form>
+        <p class="hint">Or run them now in a terminal: <code>eyes-of-aziz-bridge --all</code></p>
     {% else %}
         <p class="empty-state">None yet.</p>
     {% endif %}

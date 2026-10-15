@@ -191,3 +191,15 @@ code {
     color: var(--muted);
     font-style: italic;
 }
+
+/* Status page: one colour per camera state. */
+.badge.state-running {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.badge.state-no_stream,
+.badge.state-rejected {
+    background: var(--danger-bg);
+    color: var(--danger);
+}

@@ -47,9 +47,34 @@ class CameraBridge:
         self._motion_gate = motion_gate or MotionGate(config.motion_threshold)
         # Counts since start, for logs and the status page.
         self.stats = {"frames_captured": 0, "frames_with_faces": 0, "uploads": 0}
+        # What the status page shows. state is one of: starting, running,
+        # no_stream (can't read the camera), rejected (backend refused the
+        # device), stopped.
+        self.state = "starting"
+        self.last_upload_at: datetime | None = None
+        self.last_heartbeat_at: datetime | None = None
+        self.last_error: str | None = None
+        self.rejected = False
+
+    @property
+    def device_id(self) -> str:
+        return self._config.device_id
 
     def stop(self) -> None:
         self._stop_event.set()
+
+    def status(self) -> dict:
+        """A snapshot for the status page."""
+        return {
+            "device_id": self._config.device_id,
+            "state": self.state,
+            "upload_mode": self._config.upload_mode,
+            "last_upload_at": self.last_upload_at.isoformat() if self.last_upload_at else None,
+            "last_heartbeat_at": self.last_heartbeat_at.isoformat() if self.last_heartbeat_at else None,
+            "last_error": self.last_error,
+            "has_location": self._config.latitude is not None,
+            **self.stats,
+        }
 
     def run(self) -> None:
         logger.info(
@@ -69,6 +94,8 @@ class CameraBridge:
                 ok, frame = capture.read()
 
                 if not ok:
+                    self.state = "no_stream"
+                    self.last_error = "Can't read the camera's stream; retrying."
                     logger.warning("Lost the RTSP stream, reconnecting in %.0fs", reconnect_backoff)
                     capture.release()
                     if self._stop_event.wait(reconnect_backoff):
@@ -80,6 +107,9 @@ class CameraBridge:
                     continue
 
                 reconnect_backoff = self._config.reconnect_backoff_seconds
+                if self.state != "running":
+                    self.state = "running"
+                    self.last_error = None
                 self.stats["frames_captured"] += 1
 
                 if not self._handle_frame(frame, datetime.now(timezone.utc)):
@@ -91,6 +121,7 @@ class CameraBridge:
                     break
         finally:
             capture.release()
+            self.state = "rejected" if self.rejected else "stopped"
             logger.info("Bridge stopped")
 
     def _handle_frame(self, frame, captured_at: datetime) -> bool:
@@ -120,10 +151,7 @@ class CameraBridge:
         if not encoded:
             logger.warning("Failed to JPEG-encode an image, skipping it")
             return True
-        sent = self._send(buffer.tobytes(), captured_at)
-        if sent:
-            self.stats["uploads"] += 1
-        return sent
+        return self._send(buffer.tobytes(), captured_at)
 
     def _heartbeat_if_due(self) -> bool:
         """Sends a heartbeat on start and then every heartbeat interval.
@@ -140,12 +168,20 @@ class CameraBridge:
         self._last_heartbeat = now
         try:
             self._client.send_status()
-        except DeviceRejectedError:
+            self.last_heartbeat_at = datetime.now(timezone.utc)
+        except DeviceRejectedError as exc:
+            self._reject(exc)
             logger.exception("Device rejected by backend on heartbeat. Stopping.")
             return False
         except BackendError as exc:
+            self.last_error = f"Heartbeat failed: {exc}"
             logger.warning("Heartbeat failed, will try again next interval: %s", exc)
         return True
+
+    def _reject(self, exc: Exception) -> None:
+        self.rejected = True
+        self.last_error = f"Project Aziz rejected this camera: {exc}"
+
 
     def _open_capture(self) -> cv2.VideoCapture:
         capture = cv2.VideoCapture(self._config.rtsp_url)
@@ -156,14 +192,18 @@ class CameraBridge:
     def _send(self, jpeg_bytes: bytes, captured_at: datetime) -> bool:
         try:
             self._client.send_frame(jpeg_bytes, captured_at)
+            self.stats["uploads"] += 1
+            self.last_upload_at = datetime.now(timezone.utc)
             return True
-        except DeviceRejectedError:
+        except DeviceRejectedError as exc:
+            self._reject(exc)
             logger.exception(
                 "Device rejected by backend -- check EYES_OF_AZIZ_DEVICE_ID/"
                 "EYES_OF_AZIZ_REGISTRATION_TOKEN, or that this camera is still "
                 "active and shared with law enforcement. Stopping."
             )
             return False
-        except Exception:
+        except Exception as exc:
+            self.last_error = f"Upload failed: {exc}"
             logger.exception("Failed to upload frame, will try again next capture")
             return True

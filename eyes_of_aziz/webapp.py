@@ -19,6 +19,7 @@ from threading import Timer
 
 from flask import Flask, redirect, render_template, request, url_for
 
+from . import service
 from .account_client import AccountClient, AccountError
 from .config import BridgeConfig
 from .discovery import (
@@ -62,6 +63,8 @@ class AppState:
     probe_errors: dict[int, str] = field(default_factory=dict)
     registered: list[RegisteredCamera] = field(default_factory=list)
     registered_indices: set[int] = field(default_factory=set)
+    service_message: str | None = None
+    service_error: str | None = None
 
     @property
     def logged_in(self) -> bool:
@@ -76,6 +79,7 @@ def create_app(
     output_dir: Path | None = None,
     parse_location_fn: Callable[[str], tuple[float, float] | None] = parse_location,
     report_status_fn: Callable[[BridgeConfig], None] = report_status,
+    install_service_fn: Callable[[Path], str] = service.install,
 ) -> Flask:
     app = Flask(__name__)
     # Only used to sign Flask's own flash-message/session machinery, which
@@ -137,7 +141,21 @@ def create_app(
             registered=state.registered,
             registered_indices=state.registered_indices,
             scan_error=state.scan_error,
+            service_message=state.service_message,
+            service_error=state.service_error,
         )
+
+    @app.post("/service/install")
+    def install_service():
+        if not state.logged_in:
+            return redirect(url_for("login"))
+        try:
+            state.service_message = install_service_fn(resolved_output_dir)
+            state.service_error = None
+        except service.ServiceError as exc:
+            state.service_error = str(exc)
+            state.service_message = None
+        return redirect(url_for("cameras"))
 
     @app.post("/scan")
     def scan():
