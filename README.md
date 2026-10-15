@@ -68,7 +68,10 @@ Either one:
    local login, separate from your Project Aziz account — and confirms it's really an ONVIF
    camera by querying it directly and reading back its actual RTSP stream URL (rather than
    guessing at a brand-specific stream path).
-4. Registers it with Project Aziz and writes `cameras/<name>.env`, ready to run.
+4. Asks where the camera is (a street address, or latitude and longitude), so matches from it
+   can be shown on a map. Addresses are looked up with OpenStreetMap's Nominatim.
+5. Registers it with Project Aziz, writes `cameras/<name>.env`, and sends its first heartbeat
+   with that location, so it shows as online right away.
 
 `--web` binds to `127.0.0.1` only (default port `5151`, change with `--port`) — it's a
 single-user local dashboard for setting up your own cameras, not something meant to be reachable
@@ -121,7 +124,11 @@ that applies to every camera's config file.
 3. POSTs it to `{backend_url}/api/field-devices/{device_id}/frames` with the registration token —
    the same unauthenticated-but-token-checked pattern the backend already uses for its other field
    devices (`FieldDeviceController::ingestFrame`).
-4. If the stream drops, it reconnects with exponential backoff. If a single upload fails, it logs
+4. Every `EYES_OF_AZIZ_HEARTBEAT_INTERVAL_SECONDS` (default 5 minutes, and once on start) it
+   sends a heartbeat to `{backend_url}/api/field-devices/{device_id}/status` with its version and
+   location. That's what tells Project Aziz the camera is online. A failed heartbeat never stops
+   frame uploads.
+5. If the stream drops, it reconnects with exponential backoff. If a single upload fails, it logs
    and keeps going — a bad frame or a network blip shouldn't take the whole bridge down. If the
    backend rejects the device outright (401/403 — bad token, or the camera's been deactivated or
    pulled out of the network), it stops rather than spinning forever on a config problem.

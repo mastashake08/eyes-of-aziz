@@ -62,3 +62,43 @@ def test_from_env_rejects_an_out_of_range_jpeg_quality():
 
     with pytest.raises(ConfigError):
         BridgeConfig.from_env(env)
+
+
+def _base_env(**extra):
+    return {
+        "EYES_OF_AZIZ_BACKEND_URL": "https://projectaziz.com",
+        "EYES_OF_AZIZ_DEVICE_ID": "cam",
+        "EYES_OF_AZIZ_REGISTRATION_TOKEN": "token",
+        "EYES_OF_AZIZ_RTSP_URL": "rtsp://cam/stream",
+        **extra,
+    }
+
+
+def test_location_and_heartbeat_settings():
+    config = BridgeConfig.from_env(_base_env(
+        EYES_OF_AZIZ_LATITUDE="38.2527",
+        EYES_OF_AZIZ_LONGITUDE="-85.7585",
+        EYES_OF_AZIZ_HEARTBEAT_INTERVAL_SECONDS="60",
+    ))
+
+    assert (config.latitude, config.longitude) == (38.2527, -85.7585)
+    assert config.heartbeat_interval_seconds == 60
+    assert config.status_url == "https://projectaziz.com/api/field-devices/cam/status"
+
+
+def test_location_is_optional():
+    config = BridgeConfig.from_env(_base_env())
+
+    assert config.latitude is None and config.longitude is None
+    assert config.heartbeat_interval_seconds == 300
+
+
+@pytest.mark.parametrize("extra", [
+    {"EYES_OF_AZIZ_LATITUDE": "38.2"},
+    {"EYES_OF_AZIZ_LATITUDE": "91", "EYES_OF_AZIZ_LONGITUDE": "0"},
+    {"EYES_OF_AZIZ_LATITUDE": "0", "EYES_OF_AZIZ_LONGITUDE": "181"},
+    {"EYES_OF_AZIZ_HEARTBEAT_INTERVAL_SECONDS": "0"},
+])
+def test_bad_location_or_heartbeat_settings_are_refused(extra):
+    with pytest.raises(ConfigError):
+        BridgeConfig.from_env(_base_env(**extra))

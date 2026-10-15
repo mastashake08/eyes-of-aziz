@@ -90,3 +90,47 @@ def test_send_frame_raises_backend_error_after_exhausting_retries(requests_mock)
         client.send_frame(b"jpeg-bytes")
 
     assert requests_mock.call_count == CONFIG.max_send_retries
+
+
+LOCATED = BridgeConfig(
+    backend_url="https://projectaziz.com",
+    device_id="front-door-camera-1",
+    registration_token="secret-token",
+    rtsp_url="rtsp://192.168.1.50:554/stream1",
+    latitude=38.2527,
+    longitude=-85.7585,
+)
+
+
+def test_send_status_reports_version_and_location(requests_mock):
+    requests_mock.post(LOCATED.status_url, json={"status": "updated"})
+
+    BackendClient(LOCATED).send_status()
+
+    body = requests_mock.last_request.text
+    assert "registration_token=secret-token" in body
+    assert "latitude=38.2527" in body
+    assert "longitude=-85.7585" in body
+    assert "firmware_version=eyes-of-aziz" in body
+
+
+def test_send_status_without_a_location_leaves_it_out(requests_mock):
+    requests_mock.post(CONFIG.status_url, json={"status": "updated"})
+
+    BackendClient(CONFIG).send_status()
+
+    assert "latitude" not in requests_mock.last_request.text
+
+
+def test_send_status_rejected_device(requests_mock):
+    requests_mock.post(CONFIG.status_url, status_code=401, json={"message": "Invalid device or registration token."})
+
+    with pytest.raises(DeviceRejectedError):
+        BackendClient(CONFIG).send_status()
+
+
+def test_send_status_other_failures_are_backend_errors(requests_mock):
+    requests_mock.post(CONFIG.status_url, status_code=500, json={"message": "Server Error"})
+
+    with pytest.raises(BackendError):
+        BackendClient(CONFIG).send_status()

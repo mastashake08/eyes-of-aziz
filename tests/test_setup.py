@@ -50,7 +50,7 @@ class _FakeAccountClient:
         return self._register_result
 
 
-def _io(tmp_path, prompts, account_client=None, devices=None, probe_result=None, probe_error=None):
+def _io(tmp_path, prompts, account_client=None, devices=None, probe_result=None, probe_error=None, reported=None):
     account_client = account_client or _FakeAccountClient("https://projectaziz.com")
 
     def probe_camera(_device, _username, _password):
@@ -72,6 +72,7 @@ def _io(tmp_path, prompts, account_client=None, devices=None, probe_result=None,
         probe_camera=probe_camera,
         account_client_factory=lambda _backend_url: account_client,
         output_dir=tmp_path / "cameras",
+        report_status=(reported.append if reported is not None else lambda _config: None),
     )
 
 
@@ -110,6 +111,7 @@ def test_run_wizard_end_to_end_registers_a_discovered_camera(tmp_path):
         "admin",  # camera username
         "cam-password",  # camera password
         "",  # accept default device name
+        "",  # no location
     ]
     io = _io(tmp_path, prompts, account_client=account_client)
 
@@ -175,7 +177,7 @@ def test_run_wizard_reports_a_registration_failure_without_crashing(tmp_path):
         "https://projectaziz.com",
         register_error=AccountError("The device id has already been taken."),
     )
-    prompts = ["", "person@example.com", "correct-password", "y", "admin", "cam-password", ""]
+    prompts = ["", "person@example.com", "correct-password", "y", "admin", "cam-password", "", ""]
     io = _io(tmp_path, prompts, account_client=account_client)
 
     exit_code = run_wizard(io)
@@ -193,3 +195,45 @@ def test_run_wizard_reports_no_devices_found(tmp_path):
 
     assert exit_code == 0
     assert account_client.register_calls == []
+
+
+def test_run_wizard_saves_and_reports_the_camera_location(tmp_path):
+    reported = []
+    prompts = [
+        "", "person@example.com", "correct-password", "y", "admin", "cam-password", "",
+        "not a place at all, 999",  # can't be understood: asked again
+        "38.2527, -85.7585",
+    ]
+    io = _io(tmp_path, prompts, reported=reported)
+    io.parse_location = _fake_parse_location
+
+    assert run_wizard(io) == 0
+
+    content = (tmp_path / "cameras" / "acme-cam1.env").read_text()
+    assert "EYES_OF_AZIZ_LATITUDE=38.2527" in content
+    assert "EYES_OF_AZIZ_LONGITUDE=-85.7585" in content
+    assert len(reported) == 1
+    assert (reported[0].latitude, reported[0].longitude) == (38.2527, -85.7585)
+    assert reported[0].registration_token == "reg-token-123"
+
+
+def test_a_failed_first_heartbeat_does_not_stop_registration(tmp_path):
+    def failing_report(_config):
+        from eyes_of_aziz.api_client import BackendError
+
+        raise BackendError("offline")
+
+    prompts = ["", "person@example.com", "correct-password", "y", "admin", "cam-password", "", ""]
+    io = _io(tmp_path, prompts)
+    io.report_status = failing_report
+
+    assert run_wizard(io) == 0
+    assert (tmp_path / "cameras" / "acme-cam1.env").exists()
+
+
+def _fake_parse_location(text):
+    from eyes_of_aziz.location import LocationError, parse_location
+
+    if "not a place" in text:
+        raise LocationError("Couldn't find that.")
+    return parse_location(text)

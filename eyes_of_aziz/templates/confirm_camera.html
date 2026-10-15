@@ -16,6 +16,10 @@
         <input type="text" id="device_id" name="device_id" placeholder="{{ default_id }}" value="{{ default_id }}">
         <p class="hint">This becomes its device ID with Project Aziz — pick something you'll recognize later.</p>
 
+        <label for="location">Where is it?</label>
+        <input type="text" id="location" name="location" value="{{ location or '' }}" placeholder="123 Main St, Louisville, KY — or 38.2527, -85.7585">
+        <p class="hint">A street address, or latitude and longitude. Without it, matches from this camera can't be shown on a map.</p>
+
         <button type="submit">Register with Project Aziz</button>
         <a class="button secondary" href="{{ url_for('cameras') }}">Cancel</a>
     </form>

@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from eyes_of_aziz.api_client import DeviceRejectedError
+from eyes_of_aziz.api_client import BackendError, DeviceRejectedError
 from eyes_of_aziz.bridge import CameraBridge
 from eyes_of_aziz.config import BridgeConfig
 
@@ -110,3 +110,55 @@ def test_run_keeps_going_after_a_transient_upload_failure(monkeypatch):
     bridge.run()
 
     assert client.send_frame.call_count == 2
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_heartbeat_on_start_and_then_every_interval(monkeypatch):
+    client = MagicMock()
+    clock = FakeClock()
+    config = BridgeConfig(**{**CONFIG.__dict__, "heartbeat_interval_seconds": 300})
+    bridge = CameraBridge(config, client=client, clock=clock)
+
+    reads = [(True, A_FRAME)] * 4
+    def read_and_advance():
+        clock.now += 120  # two minutes per frame
+        if not reads:
+            bridge.stop()
+            return False, None
+        return reads.pop(0)
+
+    capture = MagicMock()
+    capture.read.side_effect = read_and_advance
+    monkeypatch.setattr("eyes_of_aziz.bridge.cv2.VideoCapture", lambda _url: capture)
+
+    bridge.run()
+
+    # At 0 (start), then once 300 seconds had passed (at 360), and not between.
+    assert client.send_status.call_count == 2
+
+
+def test_a_failed_heartbeat_does_not_stop_frames(monkeypatch):
+    client = MagicMock()
+    client.send_status.side_effect = BackendError("offline")
+    bridge, _ = _bridge_with_captures(monkeypatch, [[(True, A_FRAME), (True, A_FRAME)]], client)
+
+    bridge.run()
+
+    assert client.send_frame.call_count == 2
+
+
+def test_a_rejected_heartbeat_stops_the_bridge(monkeypatch):
+    client = MagicMock()
+    client.send_status.side_effect = DeviceRejectedError("bad token")
+    bridge, _ = _bridge_with_captures(monkeypatch, [[(True, A_FRAME)]], client)
+
+    bridge.run()
+
+    assert client.send_frame.call_count == 0
