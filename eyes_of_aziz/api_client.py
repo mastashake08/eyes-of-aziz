@@ -1,6 +1,6 @@
-"""HTTP client for the Project Aziz Eyes Of Aziz frame-ingestion endpoint.
+"""HTTP client for the Project Aziz Eyes Of Aziz device endpoints.
 
-Talks to POST /api/field-devices/{deviceId}/frames (see
+Talks to POST /api/field-devices/{deviceId}/frames and .../status (see
 FieldDeviceController::ingestFrame in the main Laravel app). That route has
 no Sanctum session -- it authenticates the same way FieldDeviceController's
 other unauthenticated device endpoints do, via a registration_token issued
@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 import requests
 
+from . import __version__
 from .config import BridgeConfig
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,39 @@ class BackendClient:
         raise BackendError(
             f"Failed to upload frame after {self._config.max_send_retries} attempt(s)"
         ) from last_error
+
+    def send_status(self) -> None:
+        """Heartbeat: tells the backend this bridge is alive (its last_seen_at),
+        which version it runs, and where the camera is. One attempt -- the next
+        heartbeat is the retry.
+        """
+        data = {
+            "registration_token": self._config.registration_token,
+            "firmware_version": f"eyes-of-aziz {__version__}",
+        }
+        if self._config.latitude is not None and self._config.longitude is not None:
+            data["latitude"] = str(self._config.latitude)
+            data["longitude"] = str(self._config.longitude)
+
+        try:
+            response = self._session.post(
+                self._config.status_url,
+                data=data,
+                headers={"Accept": "application/json"},
+                timeout=self._config.request_timeout_seconds,
+            )
+        except requests.RequestException as exc:
+            raise BackendError(f"Heartbeat failed: {exc}") from exc
+
+        if response.status_code in (401, 403):
+            raise DeviceRejectedError(
+                f"Backend rejected this device ({response.status_code}): "
+                f"{self._error_message(response)}"
+            )
+        if not response.ok:
+            raise BackendError(
+                f"Heartbeat failed ({response.status_code}): {self._error_message(response)}"
+            )
 
     def _sleep_before_retry(self, attempt: int) -> None:
         if attempt < self._config.max_send_retries:

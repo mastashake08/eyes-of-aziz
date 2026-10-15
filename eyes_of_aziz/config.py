@@ -34,6 +34,11 @@ class BridgeConfig:
     max_send_retries: int = 3
     reconnect_backoff_seconds: float = 5.0
     max_reconnect_backoff_seconds: float = 60.0
+    # Where the camera is, sent with each heartbeat so sightings from it can
+    # be placed on a map. Both or neither.
+    latitude: float | None = None
+    longitude: float | None = None
+    heartbeat_interval_seconds: float = 300.0
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> BridgeConfig:
@@ -56,6 +61,10 @@ class BridgeConfig:
             except ValueError as exc:
                 raise ConfigError(f"{name} must be a number, got {raw!r}") from exc
 
+        def _optional_float(name: str) -> float | None:
+            raw = env.get(name)
+            return _float(name, 0.0) if raw else None
+
         def _int(name: str, default: int) -> int:
             raw = env.get(name)
             if not raw:
@@ -73,6 +82,19 @@ class BridgeConfig:
         if not 1 <= jpeg_quality <= 100:
             raise ConfigError("EYES_OF_AZIZ_JPEG_QUALITY must be between 1 and 100")
 
+        latitude = _optional_float("EYES_OF_AZIZ_LATITUDE")
+        longitude = _optional_float("EYES_OF_AZIZ_LONGITUDE")
+        if (latitude is None) != (longitude is None):
+            raise ConfigError("Set both EYES_OF_AZIZ_LATITUDE and EYES_OF_AZIZ_LONGITUDE, or neither")
+        if latitude is not None and not -90 <= latitude <= 90:
+            raise ConfigError("EYES_OF_AZIZ_LATITUDE must be between -90 and 90")
+        if longitude is not None and not -180 <= longitude <= 180:
+            raise ConfigError("EYES_OF_AZIZ_LONGITUDE must be between -180 and 180")
+
+        heartbeat_interval_seconds = _float("EYES_OF_AZIZ_HEARTBEAT_INTERVAL_SECONDS", 300.0)
+        if heartbeat_interval_seconds <= 0:
+            raise ConfigError("EYES_OF_AZIZ_HEARTBEAT_INTERVAL_SECONDS must be greater than 0")
+
         return cls(
             backend_url=backend_url,
             device_id=env["EYES_OF_AZIZ_DEVICE_ID"],
@@ -86,8 +108,15 @@ class BridgeConfig:
             max_reconnect_backoff_seconds=_float(
                 "EYES_OF_AZIZ_MAX_RECONNECT_BACKOFF_SECONDS", 60.0
             ),
+            latitude=latitude,
+            longitude=longitude,
+            heartbeat_interval_seconds=heartbeat_interval_seconds,
         )
 
     @property
     def frames_url(self) -> str:
         return f"{self.backend_url}/api/field-devices/{self.device_id}/frames"
+
+    @property
+    def status_url(self) -> str:
+        return f"{self.backend_url}/api/field-devices/{self.device_id}/status"

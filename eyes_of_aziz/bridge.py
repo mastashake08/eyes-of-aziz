@@ -12,21 +12,30 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 import cv2
 
-from .api_client import BackendClient, DeviceRejectedError
+from .api_client import BackendClient, BackendError, DeviceRejectedError
 from .config import BridgeConfig
 
 logger = logging.getLogger(__name__)
 
 
 class CameraBridge:
-    def __init__(self, config: BridgeConfig, client: BackendClient | None = None) -> None:
+    def __init__(
+        self,
+        config: BridgeConfig,
+        client: BackendClient | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._config = config
         self._client = client or BackendClient(config)
         self._stop_event = threading.Event()
+        self._clock = clock
+        self._last_heartbeat: float | None = None
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -43,6 +52,9 @@ class CameraBridge:
 
         try:
             while not self._stop_event.is_set():
+                if not self._heartbeat_if_due():
+                    break
+
                 ok, frame = capture.read()
 
                 if not ok:
@@ -74,6 +86,28 @@ class CameraBridge:
         finally:
             capture.release()
             logger.info("Bridge stopped")
+
+    def _heartbeat_if_due(self) -> bool:
+        """Sends a heartbeat on start and then every heartbeat interval.
+        Returns False only when the backend rejects the device; any other
+        failure is logged and frames keep flowing.
+        """
+        now = self._clock()
+        if (
+            self._last_heartbeat is not None
+            and now - self._last_heartbeat < self._config.heartbeat_interval_seconds
+        ):
+            return True
+
+        self._last_heartbeat = now
+        try:
+            self._client.send_status()
+        except DeviceRejectedError:
+            logger.exception("Device rejected by backend on heartbeat. Stopping.")
+            return False
+        except BackendError as exc:
+            logger.warning("Heartbeat failed, will try again next interval: %s", exc)
+        return True
 
     def _open_capture(self) -> cv2.VideoCapture:
         capture = cv2.VideoCapture(self._config.rtsp_url)

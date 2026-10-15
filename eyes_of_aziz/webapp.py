@@ -20,6 +20,7 @@ from threading import Timer
 from flask import Flask, redirect, render_template, request, url_for
 
 from .account_client import AccountClient, AccountError
+from .config import BridgeConfig
 from .discovery import (
     CameraDetails,
     CameraProbeError,
@@ -27,7 +28,13 @@ from .discovery import (
     probe_camera,
     scan_network,
 )
-from .setup import DEFAULT_BACKEND_URL, slugify_device_id, write_camera_env_file
+from .location import LocationError, parse_location
+from .setup import (
+    DEFAULT_BACKEND_URL,
+    report_status,
+    slugify_device_id,
+    write_camera_env_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +74,8 @@ def create_app(
     scan_network_fn: Callable[..., list[DiscoveredDevice]] = scan_network,
     probe_camera_fn: Callable[..., CameraDetails] = probe_camera,
     output_dir: Path | None = None,
+    parse_location_fn: Callable[[str], tuple[float, float] | None] = parse_location,
+    report_status_fn: Callable[[BridgeConfig], None] = report_status,
 ) -> Flask:
     app = Flask(__name__)
     # Only used to sign Flask's own flash-message/session machinery, which
@@ -198,6 +207,19 @@ def create_app(
 
         details = state.probed[index]
         device_id = request.form.get("device_id", "").strip() or _default_device_id(state, index)
+        location_text = request.form.get("location", "")
+
+        try:
+            location = parse_location_fn(location_text)
+        except LocationError as exc:
+            return render_template(
+                "confirm_camera.html",
+                index=index,
+                details=details,
+                default_id=device_id,
+                location=location_text,
+                error=str(exc),
+            )
 
         account = account_client_factory(state.backend_url)
         try:
@@ -208,6 +230,7 @@ def create_app(
                 index=index,
                 details=details,
                 default_id=_default_device_id(state, index),
+                location=location_text,
                 error=str(exc),
             )
 
@@ -217,7 +240,22 @@ def create_app(
             backend_url=state.backend_url,
             registration_token=device_config["registration_token"],
             rtsp_url=details.rtsp_url,
+            location=location,
         )
+        try:
+            # The first heartbeat: shows the camera online, with its location.
+            report_status_fn(
+                BridgeConfig(
+                    backend_url=state.backend_url,
+                    device_id=device_config["device_id"],
+                    registration_token=device_config["registration_token"],
+                    rtsp_url=details.rtsp_url,
+                    latitude=location[0] if location else None,
+                    longitude=location[1] if location else None,
+                )
+            )
+        except Exception:
+            logger.warning("First heartbeat failed; the bridge will send one when it starts", exc_info=True)
 
         state.registered.append(
             RegisteredCamera(

@@ -55,6 +55,7 @@ def _make_app(tmp_path, account_client, devices=None, scan_error=None, probe_res
         scan_network_fn=scan_network_fn,
         probe_camera_fn=probe_camera_fn,
         output_dir=tmp_path / "cameras",
+        report_status_fn=lambda _config: None,
     )
 
 
@@ -199,3 +200,49 @@ def test_logout_clears_state(tmp_path, account_client):
     client.post("/logout")
 
     assert client.get("/cameras").headers["Location"] == "/login"
+
+
+def test_register_saves_the_location_and_reports_it(tmp_path, account_client):
+    reported = []
+    app = create_app(
+        account_client_factory=lambda _backend_url: account_client,
+        scan_network_fn=lambda **_kwargs: [DEVICE],
+        probe_camera_fn=lambda *_args: DETAILS,
+        output_dir=tmp_path / "cameras",
+        report_status_fn=reported.append,
+    )
+    client = app.test_client()
+    _login(client)
+    client.post("/scan")
+    client.post("/cameras/0/add", data={"username": "admin", "password": "cam-password"})
+
+    response = client.post("/cameras/0/register", data={"device_id": "acme-cam1", "location": "38.2527, -85.7585"})
+
+    assert response.status_code == 302
+    assert "EYES_OF_AZIZ_LATITUDE=38.2527" in (tmp_path / "cameras" / "acme-cam1.env").read_text()
+    assert (reported[0].latitude, reported[0].longitude) == (38.2527, -85.7585)
+
+
+def test_an_unknown_location_is_shown_and_nothing_is_registered(tmp_path, account_client):
+    from eyes_of_aziz.location import LocationError
+
+    def parse_location_fn(_text):
+        raise LocationError("Couldn't find 'Nowhere'.")
+
+    app = create_app(
+        account_client_factory=lambda _backend_url: account_client,
+        scan_network_fn=lambda **_kwargs: [DEVICE],
+        probe_camera_fn=lambda *_args: DETAILS,
+        output_dir=tmp_path / "cameras",
+        parse_location_fn=parse_location_fn,
+        report_status_fn=lambda _config: None,
+    )
+    client = app.test_client()
+    _login(client)
+    client.post("/scan")
+    client.post("/cameras/0/add", data={"username": "admin", "password": "cam-password"})
+
+    response = client.post("/cameras/0/register", data={"device_id": "acme-cam1", "location": "Nowhere"})
+
+    assert b"find &#39;Nowhere&#39;" in response.data or b"Nowhere" in response.data
+    assert account_client.register_calls == []

@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .account_client import AccountClient, AccountError
+from .api_client import BackendClient, BackendError
+from .config import BridgeConfig
 from .discovery import (
     CameraDetails,
     CameraProbeError,
@@ -23,6 +25,7 @@ from .discovery import (
     probe_camera,
     scan_network,
 )
+from .location import LocationError, parse_location
 
 logger = logging.getLogger(__name__)
 
@@ -41,20 +44,19 @@ def write_camera_env_file(
     backend_url: str,
     registration_token: str,
     rtsp_url: str,
+    location: tuple[float, float] | None = None,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{device_id}.env"
-    path.write_text(
-        "\n".join(
-            [
-                f"EYES_OF_AZIZ_BACKEND_URL={backend_url}",
-                f"EYES_OF_AZIZ_DEVICE_ID={device_id}",
-                f"EYES_OF_AZIZ_REGISTRATION_TOKEN={registration_token}",
-                f"EYES_OF_AZIZ_RTSP_URL={rtsp_url}",
-                "",
-            ]
-        )
-    )
+    lines = [
+        f"EYES_OF_AZIZ_BACKEND_URL={backend_url}",
+        f"EYES_OF_AZIZ_DEVICE_ID={device_id}",
+        f"EYES_OF_AZIZ_REGISTRATION_TOKEN={registration_token}",
+        f"EYES_OF_AZIZ_RTSP_URL={rtsp_url}",
+    ]
+    if location is not None:
+        lines += [f"EYES_OF_AZIZ_LATITUDE={location[0]}", f"EYES_OF_AZIZ_LONGITUDE={location[1]}"]
+    path.write_text("\n".join(lines + [""]))
     # Contains a secret (the registration token) -- owner read/write only.
     path.chmod(0o600)
     return path
@@ -72,6 +74,28 @@ class WizardIO:
     probe_camera: Callable[..., CameraDetails] = probe_camera
     account_client_factory: Callable[[str], AccountClient] = AccountClient
     output_dir: Path = field(default_factory=lambda: Path("cameras"))
+    parse_location: Callable[[str], tuple[float, float] | None] = parse_location
+    report_status: Callable[[BridgeConfig], None] = lambda config: report_status(config)
+
+
+LOCATION_PROMPT = (
+    "Where is this camera? A street address, or latitude, longitude "
+    "[blank to skip]: "
+)
+
+
+def report_status(config: BridgeConfig) -> None:
+    """Sends the first heartbeat right after registration, so the camera
+    shows as online, with its location, before the bridge is even started."""
+    BackendClient(config).send_status()
+
+
+def announce_camera(io_print: Callable[[str], None], report: Callable[[BridgeConfig], None], config: BridgeConfig) -> None:
+    try:
+        report(config)
+    except BackendError as exc:
+        # Not fatal: the bridge sends the same heartbeat when it starts.
+        io_print(f"(Couldn't send its location yet, the bridge will when it starts: {exc})")
 
 
 def run_wizard(io: WizardIO | None = None) -> int:
@@ -128,6 +152,16 @@ def run_wizard(io: WizardIO | None = None) -> int:
         default_id = slugify_device_id(label if details.manufacturer else device.host)
         device_id = io.prompt(f"Name this camera [{default_id}]: ").strip() or default_id
 
+        location = None
+        while True:
+            try:
+                location = io.parse_location(io.prompt(LOCATION_PROMPT))
+                break
+            except LocationError as exc:
+                io.print(str(exc))
+        if location is None:
+            io.print("No location: its sightings won't appear on a map until you add one.")
+
         try:
             device_config = account.register_camera(bearer_token, device_id)
         except AccountError as exc:
@@ -140,6 +174,19 @@ def run_wizard(io: WizardIO | None = None) -> int:
             backend_url=backend_url,
             registration_token=device_config["registration_token"],
             rtsp_url=details.rtsp_url,
+            location=location,
+        )
+        announce_camera(
+            io.print,
+            io.report_status,
+            BridgeConfig(
+                backend_url=backend_url,
+                device_id=device_config["device_id"],
+                registration_token=device_config["registration_token"],
+                rtsp_url=details.rtsp_url,
+                latitude=location[0] if location else None,
+                longitude=location[1] if location else None,
+            ),
         )
         io.print(f"Registered. Config written to {path}")
         io.print(f"Run it with: eyes-of-aziz-bridge --env-file {path}")
