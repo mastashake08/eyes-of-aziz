@@ -22,6 +22,32 @@ neither does the rest of the scene around a face. The backend only keeps an uplo
 an active case; everything else is discarded right after the match check. The bridge doesn't
 record anything locally — it only ever holds one frame in memory at a time.
 
+### Privacy masks, schedules and pausing
+
+Add these to a camera's file in `cameras/` (or to the environment, for every camera):
+
+```bash
+# Black out parts of the picture before faces are looked for: x,y,width,height as fractions of
+# the frame, separated by ";". This one hides the top-right quarter (say, a neighbour's window).
+EYES_OF_AZIZ_PRIVACY_MASKS=0.5,0,0.5,0.5
+
+# Only run at these times (this computer's local time). A range that ends before it starts runs
+# overnight; days without times mean all day. Unset means always.
+EYES_OF_AZIZ_SCHEDULE=mon-fri 18:00-07:00; sat,sun
+```
+
+Pause a camera from the status page's **Pause** button, or from the command line, which also
+reaches a bridge already running as a service:
+
+```bash
+eyes-of-aziz-bridge --pause front-door     # or --pause all
+eyes-of-aziz-bridge --resume front-door
+```
+
+A paused camera lets go of its stream and sends nothing, but keeps reporting in, so it doesn't
+show as offline. The pause lasts until it's resumed, including across restarts: it's a
+`front-door.paused` file next to the camera's config.
+
 On macOS and Windows, each camera's registration token and stream address (which usually
 includes the camera's password) are kept in the system keychain (Keychain / Credential Manager),
 not in its config file; the file just says `EYES_OF_AZIZ_SECRETS=keychain`. On Linux and in

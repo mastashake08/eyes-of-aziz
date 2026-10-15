@@ -204,6 +204,25 @@ code {
     color: var(--danger);
 }
 
+.badge.state-paused {
+    background: var(--panel);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+}
+
+.camera-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.camera-actions button {
+    margin-top: 0;
+    padding: 4px 12px;
+    font-size: 0.8rem;
+}
+
 .update-banner {
     background: var(--panel);
     border: 1px solid var(--accent);

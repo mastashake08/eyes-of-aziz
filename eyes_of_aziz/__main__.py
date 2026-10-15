@@ -8,12 +8,14 @@ import os
 import signal
 import sys
 import types
+from dataclasses import replace
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from . import service
 from .config import BridgeConfig, ConfigError
+from .privacy import pause_file, set_paused
 from .status_page import StatusServer
 from .supervisor import Supervisor, load_camera_configs
 from .updates import UpdateChecker
@@ -119,11 +121,20 @@ def main() -> int:
     )
     parser.add_argument("--uninstall-service", action="store_true", help="Stop starting automatically, then exit.")
     parser.add_argument(
+        "--pause",
+        metavar="CAMERA",
+        help='Pause a camera (its device ID, or "all") until --resume, including in a running bridge.',
+    )
+    parser.add_argument("--resume", metavar="CAMERA", help='Resume a paused camera (or "all").')
+    parser.add_argument(
         "--self-test",
         action="store_true",
         help="Check this install works (loads the face detector), then exit.",
     )
     args = parser.parse_args()
+
+    if args.pause or args.resume:
+        return _pause_or_resume(Path(args.cameras_dir), args.pause or args.resume, paused=bool(args.pause))
 
     if args.self_test:
         return self_test()
@@ -149,13 +160,19 @@ def main() -> int:
         logger.error(error)
         return 1
 
+    # Pause files live next to the camera configs, wherever the config came from.
+    configs = [replace(config, pause_file=str(pause_file(cameras_dir, config.device_id))) for config in configs]
     supervisor = Supervisor(configs)
     updates = UpdateChecker().start()
     status_server = None
     if not args.no_status_page:
         try:
             status_server = StatusServer(
-                supervisor.status, args.status_port, args.status_host, get_update=lambda: updates.available
+                supervisor.status,
+                args.status_port,
+                args.status_host,
+                get_update=lambda: updates.available,
+                set_paused=lambda device_id, paused: set_paused(cameras_dir, device_id, paused),
             )
             status_server.start()
         except OSError as exc:
@@ -174,6 +191,20 @@ def main() -> int:
     updates.stop()
     if status_server:
         status_server.stop()
+    return 0
+
+
+def _pause_or_resume(cameras_dir: Path, which: str, paused: bool) -> int:
+    """--pause/--resume: works on a bridge that's already running, which
+    notices the pause file within a few seconds."""
+    configured = sorted(path.stem for path in cameras_dir.glob("*.env")) if cameras_dir.is_dir() else []
+    device_ids = configured if which == "all" else [which]
+    if which != "all" and which not in configured:
+        print(f"No camera called {which} in {cameras_dir}/. Cameras: {', '.join(configured) or 'none'}")
+        return 1
+    for device_id in device_ids:
+        set_paused(cameras_dir, device_id, paused)
+        print(f"{device_id}: {'paused' if paused else 'resumed'}")
     return 0
 
 

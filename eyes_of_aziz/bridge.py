@@ -16,6 +16,7 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 
 import cv2
 
@@ -23,6 +24,7 @@ from .api_client import BackendClient, BackendError, DeviceRejectedError
 from .config import BridgeConfig
 from .faces import FaceDetector, MotionGate, crop_face
 from .frigate import FrigateError, FrigateEvents, fetch_snapshot
+from .privacy import apply_masks
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,7 @@ class CameraBridge:
         motion_gate: MotionGate | None = None,
         frigate_events: FrigateEvents | None = None,
         snapshot_fetcher: Callable[[BridgeConfig, str], object] = fetch_snapshot,
+        local_now: Callable[[], datetime] = datetime.now,
     ) -> None:
         self._config = config
         self._client = client or BackendClient(config)
@@ -50,12 +53,15 @@ class CameraBridge:
         self._motion_gate = motion_gate or MotionGate(config.motion_threshold)
         self._frigate_events = frigate_events
         self._fetch_snapshot = snapshot_fetcher
+        self._local_now = local_now
         # Counts since start, for logs and the status page.
         self.stats = {"frames_captured": 0, "frames_with_faces": 0, "uploads": 0}
         # What the status page shows. state is one of: starting, running,
-        # no_stream (can't read the camera), rejected (backend refused the
+        # no_stream (can't read the camera), paused (by someone, or outside
+        # its schedule -- see pause_reason), rejected (backend refused the
         # device), stopped.
         self.state = "starting"
+        self.pause_reason: str | None = None
         self.last_upload_at: datetime | None = None
         self.last_heartbeat_at: datetime | None = None
         self.last_error: str | None = None
@@ -78,6 +84,9 @@ class CameraBridge:
             "last_heartbeat_at": self.last_heartbeat_at.isoformat() if self.last_heartbeat_at else None,
             "last_error": self.last_error,
             "has_location": self._config.latitude is not None,
+            "pause_reason": self.pause_reason if self.state == "paused" else None,
+            "masks": len(self._config.privacy_masks),
+            "scheduled": not self._config.schedule.always,
             **self.stats,
         }
 
@@ -92,13 +101,24 @@ class CameraBridge:
             self._config.frames_url,
         )
 
-        capture = self._open_capture()
+        capture = None
         reconnect_backoff = self._config.reconnect_backoff_seconds
 
         try:
             while not self._stop_event.is_set():
                 if not self._heartbeat_if_due():
                     break
+
+                if self._paused():
+                    # Let go of the camera's stream until it's needed again.
+                    if capture is not None:
+                        capture.release()
+                        capture = None
+                    if self._stop_event.wait(self._pause_poll_seconds()):
+                        break
+                    continue
+                if capture is None:
+                    capture = self._open_capture()
 
                 ok, frame = capture.read()
 
@@ -129,7 +149,8 @@ class CameraBridge:
                 if self._stop_event.wait(self._config.capture_interval_seconds):
                     break
         finally:
-            capture.release()
+            if capture is not None:
+                capture.release()
             self.state = "rejected" if self.rejected else "stopped"
             logger.info("Bridge stopped")
 
@@ -148,6 +169,10 @@ class CameraBridge:
                 if not self._heartbeat_if_due():
                     break
                 event_id = events.next_event(timeout=1.0)
+                if self._paused():
+                    continue  # events while paused are dropped, not saved for later
+                if self.state == "starting":
+                    self.state = "running"
                 if event_id is None:
                     continue
                 try:
@@ -168,6 +193,8 @@ class CameraBridge:
     def _handle_frame(self, frame, captured_at: datetime, check_motion: bool = True) -> bool:
         """Uploads the frame, or the faces in it. Returns False if the
         backend rejected the device."""
+        # Masked areas are gone before anything looks at the picture.
+        frame = apply_masks(frame, self._config.privacy_masks)
         if not self._faces_only:
             return self._upload(frame, captured_at)
 
@@ -218,6 +245,30 @@ class CameraBridge:
             self.last_error = f"Heartbeat failed: {exc}"
             logger.warning("Heartbeat failed, will try again next interval: %s", exc)
         return True
+
+    def _paused(self) -> bool:
+        """Whether the camera is paused now, keeping state and pause_reason
+        current. Checked every loop so a pause or resume applies within
+        seconds, even from another process."""
+        if self._config.pause_file and Path(self._config.pause_file).exists():
+            reason = "Paused"
+        elif not self._config.schedule.is_active(self._local_now()):
+            reason = "Outside its schedule"
+        else:
+            reason = None
+
+        if reason:
+            if self.state != "paused" or self.pause_reason != reason:
+                logger.info("Camera %s: %s", self._config.device_id, reason.lower())
+            self.state, self.pause_reason = "paused", reason
+            return True
+        if self.state == "paused":
+            logger.info("Camera %s resumed", self._config.device_id)
+            self.state, self.pause_reason = "starting", None
+        return False
+
+    def _pause_poll_seconds(self) -> float:
+        return min(self._config.capture_interval_seconds, 5.0)
 
     def _reject(self, exc: Exception) -> None:
         self.rejected = True
