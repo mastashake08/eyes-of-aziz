@@ -8,7 +8,9 @@ registered via POST /api/field-devices/register.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from .privacy import Mask, PrivacyConfigError, Schedule, parse_masks, parse_schedule
 
 REQUIRED_VARS = (
     "EYES_OF_AZIZ_BACKEND_URL",
@@ -60,6 +62,12 @@ class BridgeConfig:
     frigate_camera: str | None = None
     mqtt_url: str | None = None
     frigate_topic_prefix: str = "frigate"
+    # Parts of the picture blacked out before faces are looked for, and the
+    # times the camera runs (privacy.py).
+    privacy_masks: tuple[Mask, ...] = ()
+    schedule: Schedule = field(default_factory=Schedule)
+    # <device_id>.paused next to the camera configs; set by __main__.
+    pause_file: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> BridgeConfig:
@@ -148,6 +156,12 @@ class BridgeConfig:
         if heartbeat_interval_seconds <= 0:
             raise ConfigError("EYES_OF_AZIZ_HEARTBEAT_INTERVAL_SECONDS must be greater than 0")
 
+        try:
+            privacy_masks = parse_masks(env.get("EYES_OF_AZIZ_PRIVACY_MASKS"))
+            schedule = parse_schedule(env.get("EYES_OF_AZIZ_SCHEDULE"))
+        except PrivacyConfigError as exc:
+            raise ConfigError(str(exc)) from exc
+
         return cls(
             backend_url=backend_url,
             device_id=env["EYES_OF_AZIZ_DEVICE_ID"],
@@ -174,6 +188,8 @@ class BridgeConfig:
             frigate_camera=env.get("EYES_OF_AZIZ_FRIGATE_CAMERA"),
             mqtt_url=env.get("EYES_OF_AZIZ_MQTT_URL"),
             frigate_topic_prefix=env.get("EYES_OF_AZIZ_FRIGATE_TOPIC_PREFIX") or "frigate",
+            privacy_masks=privacy_masks,
+            schedule=schedule,
         )
 
     @property

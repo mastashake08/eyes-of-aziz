@@ -16,12 +16,25 @@
                         Last face sent {{ camera.uploaded_ago }} · reported in {{ camera.reported_ago }}
                         · {{ camera.frames_captured or 0 }} frames, {{ camera.frames_with_faces or 0 }} with faces, {{ camera.uploads or 0 }} sent
                         {% if not camera.has_location %}· <strong>no location set</strong>{% endif %}
+                        {% if camera.masks %}· {{ camera.masks }} privacy mask{{ "s" if camera.masks != 1 }}{% endif %}
+                        {% if camera.scheduled %}· on a schedule{% endif %}
                     </div>
+                    {% if camera.pause_reason %}
+                        <div class="device-meta">{{ camera.pause_reason }}</div>
+                    {% endif %}
                     {% if camera.last_error %}
                         <div class="error" style="margin-top:8px; margin-bottom:0;">{{ camera.last_error }}</div>
                     {% endif %}
                 </div>
-                <span class="badge state-{{ camera.state }}">{{ camera.label }}</span>
+                <div class="camera-actions">
+                    <span class="badge state-{{ camera.state }}">{{ camera.label }}</span>
+                    {% if can_pause and camera.state not in ("rejected", "stopped") %}
+                        {% set paused_by_you = camera.pause_reason == "Paused" %}
+                        <form method="post" action="/cameras/{{ camera.device_id }}/{{ 'resume' if paused_by_you else 'pause' }}">
+                            <button type="submit" class="secondary">{{ "Resume" if paused_by_you else "Pause" }}</button>
+                        </form>
+                    {% endif %}
+                </div>
             </div>
         {% endfor %}
     {% else %}

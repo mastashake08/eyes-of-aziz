@@ -9,8 +9,9 @@ import logging
 import threading
 from collections.abc import Callable
 from datetime import datetime
+from urllib.parse import urlparse
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, abort, jsonify, redirect, render_template, request
 from werkzeug.serving import make_server
 
 from . import __version__
@@ -40,7 +41,9 @@ def _ago(iso: str | None) -> str:
 
 
 def create_status_app(
-    get_status: Callable[[], list[dict]], get_update: Callable[[], Release | None] = lambda: None
+    get_status: Callable[[], list[dict]],
+    get_update: Callable[[], Release | None] = lambda: None,
+    set_paused: Callable[[str, bool], None] | None = None,
 ) -> Flask:
     app = Flask(__name__)
 
@@ -55,7 +58,21 @@ def create_status_app(
             camera["label"] = STATE_LABELS.get(camera.get("state"), camera.get("state", ""))
             camera["uploaded_ago"] = _ago(camera.get("last_upload_at"))
             camera["reported_ago"] = _ago(camera.get("last_heartbeat_at"))
-        return render_template("status.html", cameras=cameras, version=__version__)
+        return render_template("status.html", cameras=cameras, version=__version__, can_pause=set_paused is not None)
+
+    @app.post("/cameras/<device_id>/<action>")
+    def pause_or_resume(device_id: str, action: str):
+        if set_paused is None or action not in ("pause", "resume"):
+            abort(404)
+        # Only this page's own buttons: another site open in the same browser
+        # mustn't be able to pause cameras by posting here.
+        origin = request.headers.get("Origin")
+        if origin and urlparse(origin).netloc != request.host:
+            abort(403)
+        if device_id not in {camera["device_id"] for camera in get_status()}:
+            abort(404)
+        set_paused(device_id, action == "pause")
+        return redirect("/", code=303)
 
     @app.get("/status.json")
     def status_json():
@@ -78,8 +95,10 @@ class StatusServer:
         port: int = 5152,
         host: str = "127.0.0.1",
         get_update: Callable[[], Release | None] = lambda: None,
+        set_paused: Callable[[str, bool], None] | None = None,
     ) -> None:
-        self._server = make_server(host, port, create_status_app(get_status, get_update), threaded=True)
+        app = create_status_app(get_status, get_update, set_paused)
+        self._server = make_server(host, port, app, threaded=True)
         self._thread = threading.Thread(target=self._server.serve_forever, name="status-page", daemon=True)
 
     @property
