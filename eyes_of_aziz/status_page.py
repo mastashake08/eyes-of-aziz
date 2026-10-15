@@ -60,13 +60,13 @@ def create_status_app(get_status: Callable[[], list[dict]]) -> Flask:
 class StatusServer:
     """Serves the status page on a background thread until stop()."""
 
-    def __init__(self, get_status: Callable[[], list[dict]], port: int = 5152) -> None:
-        self._server = make_server("127.0.0.1", port, create_status_app(get_status), threaded=True)
+    def __init__(self, get_status: Callable[[], list[dict]], port: int = 5152, host: str = "127.0.0.1") -> None:
+        self._server = make_server(host, port, create_status_app(get_status), threaded=True)
         self._thread = threading.Thread(target=self._server.serve_forever, name="status-page", daemon=True)
 
     @property
     def url(self) -> str:
-        return f"http://127.0.0.1:{self._server.server_port}/"
+        return f"http://{self._server.host}:{self._server.server_port}/"
 
     def start(self) -> None:
         self._thread.start()

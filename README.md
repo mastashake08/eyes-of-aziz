@@ -139,6 +139,46 @@ from the same machine.
 `.env.example` documents optional tuning (capture interval, face detection, heartbeat, JPEG
 quality, retry/backoff settings) that applies to every camera.
 
+## Recorders (NVRs)
+
+If setup finds a network video recorder, it sees each connected camera as a separate channel and
+offers to add all of them, named `<name>-ch1`, `<name>-ch2`, and so on, sharing one location. Each
+channel is its own camera in Project Aziz and its own config under `cameras/`.
+
+## Docker (Raspberry Pi, NAS)
+
+An image for amd64 and arm64 is published as `ghcr.io/mastashake08/eyes-of-aziz` with each
+release. From the folder you want your camera configs in:
+
+```bash
+# Set up cameras. --network host lets it find cameras on your network.
+docker run -it --rm --network host -v "$PWD:/data" \
+  --entrypoint eyes-of-aziz-setup ghcr.io/mastashake08/eyes-of-aziz
+
+# Run every camera, restarting with the machine.
+docker run -d --restart unless-stopped -v "$PWD:/data" -p 5152:5152 \
+  ghcr.io/mastashake08/eyes-of-aziz
+```
+
+Or copy `docker-compose.example.yml` to `docker-compose.yml` and `docker compose up -d`. The status
+page is on port 5152.
+
+## Frigate
+
+If you already run [Frigate](https://frigate.video), the bridge can use its person detection
+instead of reading the stream itself: it listens for Frigate's person events over MQTT and checks
+each event's snapshot for faces. Set these in the camera's config (no RTSP URL needed):
+
+```bash
+EYES_OF_AZIZ_SOURCE=frigate
+EYES_OF_AZIZ_FRIGATE_URL=http://frigate.local:5000
+EYES_OF_AZIZ_FRIGATE_CAMERA=driveway            # the camera's name in Frigate
+EYES_OF_AZIZ_MQTT_URL=mqtt://user:password@mqtt.local:1883
+# EYES_OF_AZIZ_FRIGATE_TOPIC_PREFIX=frigate     # if you changed Frigate's MQTT topic prefix
+```
+
+It takes the snapshot at the start of each sighting and the best one at its end.
+
 ## How it works
 
 1. Opens the RTSP stream with OpenCV.

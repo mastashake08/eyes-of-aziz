@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+venv
+build
+dist
+cameras
+*.env
+tests
+packaging
+**/__pycache__
+*.egg-info

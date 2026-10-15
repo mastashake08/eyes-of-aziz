@@ -22,6 +22,7 @@ import cv2
 from .api_client import BackendClient, BackendError, DeviceRejectedError
 from .config import BridgeConfig
 from .faces import FaceDetector, MotionGate, crop_face
+from .frigate import FrigateError, FrigateEvents, fetch_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,8 @@ class CameraBridge:
         clock: Callable[[], float] = time.monotonic,
         detector: FaceDetector | None = None,
         motion_gate: MotionGate | None = None,
+        frigate_events: FrigateEvents | None = None,
+        snapshot_fetcher: Callable[[BridgeConfig, str], object] = fetch_snapshot,
     ) -> None:
         self._config = config
         self._client = client or BackendClient(config)
@@ -45,6 +48,8 @@ class CameraBridge:
         if self._faces_only and self._detector is None:
             self._detector = FaceDetector(config.face_score_threshold, config.min_face_size)
         self._motion_gate = motion_gate or MotionGate(config.motion_threshold)
+        self._frigate_events = frigate_events
+        self._fetch_snapshot = snapshot_fetcher
         # Counts since start, for logs and the status page.
         self.stats = {"frames_captured": 0, "frames_with_faces": 0, "uploads": 0}
         # What the status page shows. state is one of: starting, running,
@@ -77,6 +82,10 @@ class CameraBridge:
         }
 
     def run(self) -> None:
+        if self._config.source == "frigate":
+            self._run_frigate()
+            return
+
         logger.info(
             "Starting Eyes Of Aziz bridge for device %s -> %s",
             self._config.device_id,
@@ -124,13 +133,45 @@ class CameraBridge:
             self.state = "rejected" if self.rejected else "stopped"
             logger.info("Bridge stopped")
 
-    def _handle_frame(self, frame, captured_at: datetime) -> bool:
+    def _run_frigate(self) -> None:
+        """Waits for Frigate's person events and handles each one's snapshot."""
+        logger.info(
+            "Starting Eyes Of Aziz bridge for device %s from Frigate camera %s",
+            self._config.device_id,
+            self._config.frigate_camera,
+        )
+        events = self._frigate_events or FrigateEvents(self._config)
+        events.start()
+        self.state = "running"
+        try:
+            while not self._stop_event.is_set():
+                if not self._heartbeat_if_due():
+                    break
+                event_id = events.next_event(timeout=1.0)
+                if event_id is None:
+                    continue
+                try:
+                    snapshot = self._fetch_snapshot(self._config, event_id)
+                except FrigateError as exc:
+                    self.last_error = str(exc)
+                    logger.warning("%s", exc)
+                    continue
+                self.stats["frames_captured"] += 1
+                # Snapshots are of different moments: no motion check.
+                if not self._handle_frame(snapshot, datetime.now(timezone.utc), check_motion=False):
+                    break
+        finally:
+            events.stop()
+            self.state = "rejected" if self.rejected else "stopped"
+            logger.info("Bridge stopped")
+
+    def _handle_frame(self, frame, captured_at: datetime, check_motion: bool = True) -> bool:
         """Uploads the frame, or the faces in it. Returns False if the
         backend rejected the device."""
         if not self._faces_only:
             return self._upload(frame, captured_at)
 
-        if not self._motion_gate.changed(frame):
+        if check_motion and not self._motion_gate.changed(frame):
             return True
 
         faces = self._detector.detect(frame)[: self._config.max_faces_per_frame]

@@ -1,0 +1,11 @@
+# Copy to docker-compose.yml next to your cameras/ folder, then:
+#   docker compose up -d
+# The status page is at http://<this machine>:5152/
+services:
+  eyes-of-aziz:
+    image: ghcr.io/mastashake08/eyes-of-aziz:latest
+    restart: unless-stopped
+    volumes:
+      - ./:/data
+    ports:
+      - "5152:5152"

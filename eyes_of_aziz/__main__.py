@@ -101,6 +101,11 @@ def main() -> int:
         default=5152,
         help="Port for the local status page (default: 5152).",
     )
+    parser.add_argument(
+        "--status-host",
+        default="127.0.0.1",
+        help="Address the status page listens on (default: this machine only; 0.0.0.0 in Docker).",
+    )
     parser.add_argument("--no-status-page", action="store_true", help="Don't serve the status page.")
     parser.add_argument(
         "--install-service",
@@ -143,7 +148,7 @@ def main() -> int:
     status_server = None
     if not args.no_status_page:
         try:
-            status_server = StatusServer(supervisor.status, args.status_port)
+            status_server = StatusServer(supervisor.status, args.status_port, args.status_host)
             status_server.start()
         except OSError as exc:
             # Another bridge may already be serving it; the cameras matter more.

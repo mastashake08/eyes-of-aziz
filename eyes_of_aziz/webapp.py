@@ -32,9 +32,10 @@ from .discovery import (
 from .location import LocationError, parse_location
 from .setup import (
     DEFAULT_BACKEND_URL,
+    register_stream,
     report_status,
     slugify_device_id,
-    write_camera_env_file,
+    streams_to_register,
 )
 
 logger = logging.getLogger(__name__)
@@ -240,48 +241,30 @@ def create_app(
             )
 
         account = account_client_factory(state.backend_url)
-        try:
-            device_config = account.register_camera(state.bearer_token, device_id)
-        except AccountError as exc:
+        add_all_channels = request.form.get("all_channels") == "1"
+        errors = []
+        for channel_id, rtsp_url in streams_to_register(details, device_id, add_all_channels):
+            try:
+                path = register_stream(
+                    account, state.bearer_token, state.backend_url, resolved_output_dir,
+                    channel_id, rtsp_url, location, report_status_fn,
+                    lambda message: logger.warning("%s", message),
+                )
+            except AccountError as exc:
+                errors.append(f"{channel_id}: {exc}")
+                continue
+            state.registered.append(RegisteredCamera(device_id=channel_id, rtsp_url=rtsp_url, config_path=str(path)))
+
+        if errors and len(errors) == len(streams_to_register(details, device_id, add_all_channels)):
             return render_template(
                 "confirm_camera.html",
                 index=index,
                 details=details,
                 default_id=_default_device_id(state, index),
                 location=location_text,
-                error=str(exc),
+                error="; ".join(errors),
             )
 
-        path = write_camera_env_file(
-            resolved_output_dir,
-            device_id=device_config["device_id"],
-            backend_url=state.backend_url,
-            registration_token=device_config["registration_token"],
-            rtsp_url=details.rtsp_url,
-            location=location,
-        )
-        try:
-            # The first heartbeat: shows the camera online, with its location.
-            report_status_fn(
-                BridgeConfig(
-                    backend_url=state.backend_url,
-                    device_id=device_config["device_id"],
-                    registration_token=device_config["registration_token"],
-                    rtsp_url=details.rtsp_url,
-                    latitude=location[0] if location else None,
-                    longitude=location[1] if location else None,
-                )
-            )
-        except Exception:
-            logger.warning("First heartbeat failed; the bridge will send one when it starts", exc_info=True)
-
-        state.registered.append(
-            RegisteredCamera(
-                device_id=device_config["device_id"],
-                rtsp_url=details.rtsp_url,
-                config_path=str(path),
-            )
-        )
         state.registered_indices.add(index)
         state.probed.pop(index, None)
         return redirect(url_for("cameras"))
