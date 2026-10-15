@@ -246,3 +246,25 @@ def test_an_unknown_location_is_shown_and_nothing_is_registered(tmp_path, accoun
 
     assert b"find &#39;Nowhere&#39;" in response.data or b"Nowhere" in response.data
     assert account_client.register_calls == []
+
+
+def test_start_automatically_installs_the_service(tmp_path, account_client):
+    installed = []
+    app = create_app(
+        account_client_factory=lambda _backend_url: account_client,
+        scan_network_fn=lambda **_kwargs: [DEVICE],
+        probe_camera_fn=lambda *_args: DETAILS,
+        output_dir=tmp_path / "cameras",
+        report_status_fn=lambda _config: None,
+        install_service_fn=lambda cameras_dir: installed.append(cameras_dir) or "Installed: starts at login.",
+    )
+    client = app.test_client()
+    _login(client)
+    client.post("/scan")
+    client.post("/cameras/0/add", data={"username": "admin", "password": "cam-password"})
+    client.post("/cameras/0/register", data={"device_id": "acme-cam1"})
+
+    page = client.post("/service/install", follow_redirects=True).data
+
+    assert installed == [tmp_path / "cameras"]
+    assert b"Installed: starts at login." in page

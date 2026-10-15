@@ -12,8 +12,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .bridge import CameraBridge
+from . import service
 from .config import BridgeConfig, ConfigError
+from .status_page import StatusServer
+from .supervisor import Supervisor, load_camera_configs
 
 logger = logging.getLogger(__name__)
 
@@ -70,19 +72,37 @@ def self_test() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="eyes-of-aziz-bridge",
-        description="Pulls frames from one RTSP camera and forwards them to Project Aziz.",
+        description="Pulls frames from RTSP cameras and forwards the faces in them to Project Aziz.",
     )
     parser.add_argument(
         "--env-file",
         metavar="PATH",
-        help=(
-            "Path to this camera's config file (default: .env in the current "
-            "directory). Running more than one camera means running this "
-            "once per camera, each with its own --env-file -- see "
-            "`eyes-of-aziz-setup`, which generates one under cameras/ per "
-            "camera you register."
-        ),
+        help="Run just this camera's config file (default: .env, or the cameras in cameras/).",
     )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Run every camera in the cameras folder (the default when there's more than one).",
+    )
+    parser.add_argument(
+        "--cameras-dir",
+        metavar="DIR",
+        default="cameras",
+        help="Where the camera configs are (default: cameras).",
+    )
+    parser.add_argument(
+        "--status-port",
+        type=int,
+        default=5152,
+        help="Port for the local status page (default: 5152).",
+    )
+    parser.add_argument("--no-status-page", action="store_true", help="Don't serve the status page.")
+    parser.add_argument(
+        "--install-service",
+        action="store_true",
+        help="Start every camera automatically when this computer starts (or at login), then exit.",
+    )
+    parser.add_argument("--uninstall-service", action="store_true", help="Stop starting automatically, then exit.")
     parser.add_argument(
         "--self-test",
         action="store_true",
@@ -98,35 +118,74 @@ def main() -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    env_path, resolve_error = resolve_env_file(args.env_file)
-    if resolve_error:
-        logger.error(resolve_error)
-        return 1
+    cameras_dir = Path(args.cameras_dir)
 
-    if env_path:
-        if not load_dotenv(env_path):
-            logger.error("Could not read env file: %s", env_path)
+    if args.install_service or args.uninstall_service:
+        try:
+            message = service.install(cameras_dir) if args.install_service else service.uninstall()
+        except service.ServiceError as exc:
+            logger.error(str(exc))
             return 1
-    else:
-        load_dotenv()
+        print(message)
+        return 0
 
-    try:
-        config = BridgeConfig.from_env(os.environ)
-    except ConfigError as exc:
-        logger.error(str(exc))
+    configs, error = _configs_to_run(args, cameras_dir)
+    if error:
+        logger.error(error)
         return 1
 
-    bridge = CameraBridge(config)
+    supervisor = Supervisor(configs)
+    status_server = None
+    if not args.no_status_page:
+        try:
+            status_server = StatusServer(supervisor.status, args.status_port)
+            status_server.start()
+        except OSError as exc:
+            # Another bridge may already be serving it; the cameras matter more.
+            logger.warning("Status page not started on port %s: %s", args.status_port, exc)
+            status_server = None
 
     def _handle_signal(signum: int, _frame: types.FrameType | None) -> None:
         logger.info("Received signal %s, shutting down", signum)
-        bridge.stop()
+        supervisor.stop()
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
-    bridge.run()
+    supervisor.run()
+    if status_server:
+        status_server.stop()
     return 0
+
+
+def _configs_to_run(args: argparse.Namespace, cameras_dir: Path) -> tuple[list[BridgeConfig], str | None]:
+    """The cameras this run handles: every one in cameras_dir with --all (or
+    when there's more than one and no --env-file), otherwise the single
+    config resolve_env_file picks."""
+    configs_found = sorted(cameras_dir.glob("*.env")) if cameras_dir.is_dir() else []
+    if args.all or (not args.env_file and len(configs_found) > 1):
+        configs, problems = load_camera_configs(cameras_dir)
+        for problem in problems:
+            logger.error("Skipping %s", problem)
+        if not configs:
+            return [], f"No usable camera configs in {cameras_dir}/. Run eyes-of-aziz-setup to add one."
+        logger.info("Running %d camera(s) from %s/", len(configs), cameras_dir)
+        return configs, None
+
+    env_path, resolve_error = resolve_env_file(args.env_file, cameras_dir.parent)
+    if resolve_error:
+        return [], resolve_error
+
+    if env_path:
+        if not load_dotenv(env_path):
+            return [], f"Could not read env file: {env_path}"
+    else:
+        load_dotenv()
+
+    try:
+        return [BridgeConfig.from_env(os.environ)], None
+    except ConfigError as exc:
+        return [], str(exc)
 
 
 if __name__ == "__main__":
