@@ -39,6 +39,15 @@ class BridgeConfig:
     latitude: float | None = None
     longitude: float | None = None
     heartbeat_interval_seconds: float = 300.0
+    # "faces": detect faces here and upload each one as a crop (see faces.py).
+    # "frames": upload every whole frame, as before.
+    upload_mode: str = "faces"
+    face_score_threshold: float = 0.8
+    min_face_size: int = 40
+    max_faces_per_frame: int = 5
+    # Share of the (downscaled) picture that must change before faces are
+    # looked for again; 0 turns the motion check off.
+    motion_threshold: float = 0.01
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> BridgeConfig:
@@ -91,6 +100,22 @@ class BridgeConfig:
         if longitude is not None and not -180 <= longitude <= 180:
             raise ConfigError("EYES_OF_AZIZ_LONGITUDE must be between -180 and 180")
 
+        upload_mode = (env.get("EYES_OF_AZIZ_UPLOAD_MODE") or "faces").strip().lower()
+        if upload_mode not in ("faces", "frames"):
+            raise ConfigError('EYES_OF_AZIZ_UPLOAD_MODE must be "faces" or "frames"')
+
+        face_score_threshold = _float("EYES_OF_AZIZ_FACE_SCORE_THRESHOLD", 0.8)
+        if not 0 < face_score_threshold <= 1:
+            raise ConfigError("EYES_OF_AZIZ_FACE_SCORE_THRESHOLD must be above 0 and at most 1")
+
+        max_faces_per_frame = _int("EYES_OF_AZIZ_MAX_FACES_PER_FRAME", 5)
+        if max_faces_per_frame < 1:
+            raise ConfigError("EYES_OF_AZIZ_MAX_FACES_PER_FRAME must be at least 1")
+
+        motion_threshold = _float("EYES_OF_AZIZ_MOTION_THRESHOLD", 0.01)
+        if not 0 <= motion_threshold <= 1:
+            raise ConfigError("EYES_OF_AZIZ_MOTION_THRESHOLD must be between 0 and 1")
+
         heartbeat_interval_seconds = _float("EYES_OF_AZIZ_HEARTBEAT_INTERVAL_SECONDS", 300.0)
         if heartbeat_interval_seconds <= 0:
             raise ConfigError("EYES_OF_AZIZ_HEARTBEAT_INTERVAL_SECONDS must be greater than 0")
@@ -111,6 +136,11 @@ class BridgeConfig:
             latitude=latitude,
             longitude=longitude,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
+            upload_mode=upload_mode,
+            face_score_threshold=face_score_threshold,
+            min_face_size=_int("EYES_OF_AZIZ_MIN_FACE_SIZE", 40),
+            max_faces_per_frame=max_faces_per_frame,
+            motion_threshold=motion_threshold,
         )
 
     @property

@@ -50,6 +50,23 @@ def resolve_env_file(explicit_path: str | None, search_dir: Path = Path(".")) ->
     return None, None
 
 
+def self_test() -> int:
+    """Loads the bundled face detector and runs it once. Used after
+    packaging, so a build missing the model fails there, not for users."""
+    import numpy as np
+
+    from . import __version__
+    from .faces import FaceDetector
+
+    try:
+        FaceDetector().detect(np.zeros((240, 320, 3), dtype=np.uint8))
+    except Exception as exc:  # noqa: BLE001 - reporting any failure is the point
+        print(f"eyes-of-aziz {__version__}: self-test FAILED: {exc}")
+        return 1
+    print(f"eyes-of-aziz {__version__}: self-test passed (face detector loaded)")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="eyes-of-aziz-bridge",
@@ -66,7 +83,15 @@ def main() -> int:
             "camera you register."
         ),
     )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="Check this install works (loads the face detector), then exit.",
+    )
     args = parser.parse_args()
+
+    if args.self_test:
+        return self_test()
 
     logging.basicConfig(
         level=os.environ.get("EYES_OF_AZIZ_LOG_LEVEL", "INFO"),

@@ -16,9 +16,15 @@ etc. It's meant to be simple enough to read end to end.
 
 ## Privacy
 
-The backend only keeps a frame if it matches an active case; everything else is discarded right
-after the match check. This bridge doesn't add any local recording of its own — it only ever holds
-one frame in memory at a time before uploading it.
+By default the bridge only uploads **faces**: it looks for faces in each frame on your own machine
+and sends each one as a small crop. Frames with nobody in them never leave your network, and
+neither does the rest of the scene around a face. The backend only keeps an upload if it matches
+an active case; everything else is discarded right after the match check. The bridge doesn't
+record anything locally — it only ever holds one frame in memory at a time.
+
+Face detection uses OpenCV's [YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)
+model (MIT licensed), bundled in `eyes_of_aziz/models/`. It runs in real time on an ordinary CPU,
+including a Raspberry Pi 4.
 
 ## Requirements
 
@@ -120,8 +126,10 @@ that applies to every camera's config file.
 ## How it works
 
 1. Opens the RTSP stream with OpenCV.
-2. Every `EYES_OF_AZIZ_CAPTURE_INTERVAL_SECONDS` (default 10s), grabs a frame and JPEG-encodes it.
-3. POSTs it to `{backend_url}/api/field-devices/{device_id}/frames` with the registration token —
+2. Every `EYES_OF_AZIZ_CAPTURE_INTERVAL_SECONDS` (default 10s), grabs a frame. If the scene
+   hasn't changed it skips it; otherwise it looks for faces. No faces, nothing is sent.
+3. POSTs each face (as a JPEG crop, scaled up if small) to
+   `{backend_url}/api/field-devices/{device_id}/frames` with the registration token —
    the same unauthenticated-but-token-checked pattern the backend already uses for its other field
    devices (`FieldDeviceController::ingestFrame`).
 4. Every `EYES_OF_AZIZ_HEARTBEAT_INTERVAL_SECONDS` (default 5 minutes, and once on start) it
