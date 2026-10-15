@@ -16,6 +16,7 @@ from . import service
 from .config import BridgeConfig, ConfigError
 from .status_page import StatusServer
 from .supervisor import Supervisor, load_camera_configs
+from .updates import UpdateChecker
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +54,14 @@ def resolve_env_file(explicit_path: str | None, search_dir: Path = Path(".")) ->
 
 
 def self_test() -> int:
-    """Loads the bundled face detector and renders the status page once.
-    Used after packaging, so a build missing the model or the page's
-    templates fails there, not for users."""
+    """Loads the bundled face detector, renders the status page once and,
+    on macOS and Windows, finds the system keychain. Used after packaging,
+    so a build missing the model, the page's templates or a keychain
+    backend fails there, not for users."""
+    import keyring
     import numpy as np
 
-    from . import __version__
+    from . import __version__, secrets
     from .faces import FaceDetector
     from .status_page import create_status_app
 
@@ -67,10 +70,12 @@ def self_test() -> int:
         page = create_status_app(list).test_client().get("/")
         if page.status_code != 200:
             raise RuntimeError(f"status page returned {page.status_code}")
+        if secrets.keychain_supported() and keyring.get_keyring().priority <= 0:
+            raise RuntimeError(f"no system keychain backend (got {keyring.get_keyring()!r})")
     except Exception as exc:  # noqa: BLE001 - reporting any failure is the point
         print(f"eyes-of-aziz {__version__}: self-test FAILED: {exc}")
         return 1
-    print(f"eyes-of-aziz {__version__}: self-test passed (face detector and status page)")
+    print(f"eyes-of-aziz {__version__}: self-test passed (face detector, status page and keychain)")
     return 0
 
 
@@ -145,10 +150,13 @@ def main() -> int:
         return 1
 
     supervisor = Supervisor(configs)
+    updates = UpdateChecker().start()
     status_server = None
     if not args.no_status_page:
         try:
-            status_server = StatusServer(supervisor.status, args.status_port, args.status_host)
+            status_server = StatusServer(
+                supervisor.status, args.status_port, args.status_host, get_update=lambda: updates.available
+            )
             status_server.start()
         except OSError as exc:
             # Another bridge may already be serving it; the cameras matter more.
@@ -163,6 +171,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _handle_signal)
 
     supervisor.run()
+    updates.stop()
     if status_server:
         status_server.stop()
     return 0

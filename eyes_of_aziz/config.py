@@ -63,6 +63,18 @@ class BridgeConfig:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> BridgeConfig:
+        if env.get("EYES_OF_AZIZ_SECRETS") == "keychain" and env.get("EYES_OF_AZIZ_DEVICE_ID"):
+            # Secrets were saved in the system keychain at setup (secrets.py).
+            from . import secrets
+
+            stored = secrets.load(env["EYES_OF_AZIZ_DEVICE_ID"])
+            if "EYES_OF_AZIZ_REGISTRATION_TOKEN" not in stored:
+                raise ConfigError(
+                    f"The keychain has no registration token for {env['EYES_OF_AZIZ_DEVICE_ID']}. "
+                    "Register the camera again with eyes-of-aziz-setup."
+                )
+            env = {**env, **stored}
+
         source = (env.get("EYES_OF_AZIZ_SOURCE") or "rtsp").strip().lower()
         if source not in SOURCE_VARS:
             raise ConfigError('EYES_OF_AZIZ_SOURCE must be "rtsp" or "frigate"')
