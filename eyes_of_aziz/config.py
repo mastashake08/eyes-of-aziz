@@ -14,8 +14,13 @@ REQUIRED_VARS = (
     "EYES_OF_AZIZ_BACKEND_URL",
     "EYES_OF_AZIZ_DEVICE_ID",
     "EYES_OF_AZIZ_REGISTRATION_TOKEN",
-    "EYES_OF_AZIZ_RTSP_URL",
 )
+
+# What each camera source needs on top of REQUIRED_VARS.
+SOURCE_VARS = {
+    "rtsp": ("EYES_OF_AZIZ_RTSP_URL",),
+    "frigate": ("EYES_OF_AZIZ_FRIGATE_URL", "EYES_OF_AZIZ_FRIGATE_CAMERA", "EYES_OF_AZIZ_MQTT_URL"),
+}
 
 
 class ConfigError(ValueError):
@@ -48,10 +53,21 @@ class BridgeConfig:
     # Share of the (downscaled) picture that must change before faces are
     # looked for again; 0 turns the motion check off.
     motion_threshold: float = 0.01
+    # "rtsp": read the camera's stream. "frigate": take the snapshot of each
+    # person event an existing Frigate install reports over MQTT (frigate.py).
+    source: str = "rtsp"
+    frigate_url: str | None = None
+    frigate_camera: str | None = None
+    mqtt_url: str | None = None
+    frigate_topic_prefix: str = "frigate"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> BridgeConfig:
-        missing = [name for name in REQUIRED_VARS if not env.get(name)]
+        source = (env.get("EYES_OF_AZIZ_SOURCE") or "rtsp").strip().lower()
+        if source not in SOURCE_VARS:
+            raise ConfigError('EYES_OF_AZIZ_SOURCE must be "rtsp" or "frigate"')
+
+        missing = [name for name in REQUIRED_VARS + SOURCE_VARS[source] if not env.get(name)]
         if missing:
             raise ConfigError(
                 "Missing required environment variable(s): "
@@ -124,7 +140,7 @@ class BridgeConfig:
             backend_url=backend_url,
             device_id=env["EYES_OF_AZIZ_DEVICE_ID"],
             registration_token=env["EYES_OF_AZIZ_REGISTRATION_TOKEN"],
-            rtsp_url=env["EYES_OF_AZIZ_RTSP_URL"],
+            rtsp_url=env.get("EYES_OF_AZIZ_RTSP_URL", ""),
             capture_interval_seconds=capture_interval_seconds,
             jpeg_quality=jpeg_quality,
             request_timeout_seconds=_float("EYES_OF_AZIZ_REQUEST_TIMEOUT_SECONDS", 15.0),
@@ -141,6 +157,11 @@ class BridgeConfig:
             min_face_size=_int("EYES_OF_AZIZ_MIN_FACE_SIZE", 40),
             max_faces_per_frame=max_faces_per_frame,
             motion_threshold=motion_threshold,
+            source=source,
+            frigate_url=env.get("EYES_OF_AZIZ_FRIGATE_URL"),
+            frigate_camera=env.get("EYES_OF_AZIZ_FRIGATE_CAMERA"),
+            mqtt_url=env.get("EYES_OF_AZIZ_MQTT_URL"),
+            frigate_topic_prefix=env.get("EYES_OF_AZIZ_FRIGATE_TOPIC_PREFIX") or "frigate",
         )
 
     @property

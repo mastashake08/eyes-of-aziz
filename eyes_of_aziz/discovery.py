@@ -73,6 +73,13 @@ class CameraDetails:
     manufacturer: str | None
     model: str | None
     rtsp_url: str
+    # One stream per video input. A camera has one; an NVR has one per
+    # connected camera ("channel"), and each can be registered on its own.
+    channels: tuple[str, ...] = ()
+
+    @property
+    def is_recorder(self) -> bool:
+        return len(self.channels) > 1
 
 
 class CameraProbeError(RuntimeError):
@@ -109,14 +116,26 @@ async def _probe_camera_async(
         if not profiles:
             raise CameraProbeError(f"{device.host} has no media profiles to stream from")
 
-        stream_uri = await media.GetStreamUri(
-            {
-                "StreamSetup": {"Stream": "RTP-Unicast", "Transport": {"Protocol": "RTSP"}},
-                "ProfileToken": profiles[0].token,
-            }
-        )
+        # Profiles come in sets per video input (main stream, substream...);
+        # the first profile of each input is its main stream.
+        first_profile_per_source = {}
+        for profile in profiles:
+            source = getattr(getattr(profile, "VideoSourceConfiguration", None), "SourceToken", None)
+            first_profile_per_source.setdefault(source or profile.token, profile)
 
-        return CameraDetails(manufacturer=manufacturer, model=model, rtsp_url=stream_uri.Uri)
+        channels = []
+        for profile in first_profile_per_source.values():
+            stream_uri = await media.GetStreamUri(
+                {
+                    "StreamSetup": {"Stream": "RTP-Unicast", "Transport": {"Protocol": "RTSP"}},
+                    "ProfileToken": profile.token,
+                }
+            )
+            channels.append(stream_uri.Uri)
+
+        return CameraDetails(
+            manufacturer=manufacturer, model=model, rtsp_url=channels[0], channels=tuple(channels)
+        )
     except CameraProbeError:
         raise
     except Exception as exc:

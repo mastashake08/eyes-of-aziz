@@ -98,6 +98,51 @@ def announce_camera(io_print: Callable[[str], None], report: Callable[[BridgeCon
         io_print(f"(Couldn't send its location yet, the bridge will when it starts: {exc})")
 
 
+def streams_to_register(details: CameraDetails, device_id: str, add_all_channels: bool) -> list[tuple[str, str]]:
+    """(device id, RTSP URL) for each camera to register: every channel of a
+    recorder as <name>-ch1, -ch2, ..., or just the one stream."""
+    if details.is_recorder and add_all_channels:
+        return [(f"{device_id}-ch{number}", url) for number, url in enumerate(details.channels, start=1)]
+    return [(device_id, details.rtsp_url)]
+
+
+def register_stream(
+    account: AccountClient,
+    bearer_token: str,
+    backend_url: str,
+    output_dir: Path,
+    device_id: str,
+    rtsp_url: str,
+    location: tuple[float, float] | None,
+    report: Callable[[BridgeConfig], None],
+    io_print: Callable[[str], None],
+) -> Path:
+    """Registers one camera stream with Project Aziz, writes its config and
+    sends its first heartbeat. Raises AccountError if registration fails."""
+    device_config = account.register_camera(bearer_token, device_id)
+    path = write_camera_env_file(
+        output_dir,
+        device_id=device_config["device_id"],
+        backend_url=backend_url,
+        registration_token=device_config["registration_token"],
+        rtsp_url=rtsp_url,
+        location=location,
+    )
+    announce_camera(
+        io_print,
+        report,
+        BridgeConfig(
+            backend_url=backend_url,
+            device_id=device_config["device_id"],
+            registration_token=device_config["registration_token"],
+            rtsp_url=rtsp_url,
+            latitude=location[0] if location else None,
+            longitude=location[1] if location else None,
+        ),
+    )
+    return path
+
+
 def run_wizard(io: WizardIO | None = None) -> int:
     io = io or WizardIO()
 
@@ -152,6 +197,13 @@ def run_wizard(io: WizardIO | None = None) -> int:
         default_id = slugify_device_id(label if details.manufacturer else device.host)
         device_id = io.prompt(f"Name this camera [{default_id}]: ").strip() or default_id
 
+        add_all_channels = False
+        if details.is_recorder:
+            io.print(f"This is a recorder with {len(details.channels)} cameras connected.")
+            add_all_channels = io.prompt(
+                f"Add all {len(details.channels)} as separate cameras ({device_id}-ch1, ...)? [Y/n]: "
+            ).strip().lower() != "n"
+
         location = None
         while True:
             try:
@@ -162,35 +214,20 @@ def run_wizard(io: WizardIO | None = None) -> int:
         if location is None:
             io.print("No location: its sightings won't appear on a map until you add one.")
 
-        try:
-            device_config = account.register_camera(bearer_token, device_id)
-        except AccountError as exc:
-            io.print(f"Could not register it with Project Aziz: {exc}")
-            continue
+        for channel_id, rtsp_url in streams_to_register(details, device_id, add_all_channels):
+            try:
+                path = register_stream(
+                    account, bearer_token, backend_url, io.output_dir,
+                    channel_id, rtsp_url, location, io.report_status, io.print,
+                )
+            except AccountError as exc:
+                io.print(f"Could not register {channel_id} with Project Aziz: {exc}")
+                continue
+            io.print(f"Registered {channel_id}. Config written to {path}")
+            registered += 1
 
-        path = write_camera_env_file(
-            io.output_dir,
-            device_id=device_config["device_id"],
-            backend_url=backend_url,
-            registration_token=device_config["registration_token"],
-            rtsp_url=details.rtsp_url,
-            location=location,
-        )
-        announce_camera(
-            io.print,
-            io.report_status,
-            BridgeConfig(
-                backend_url=backend_url,
-                device_id=device_config["device_id"],
-                registration_token=device_config["registration_token"],
-                rtsp_url=details.rtsp_url,
-                latitude=location[0] if location else None,
-                longitude=location[1] if location else None,
-            ),
-        )
-        io.print(f"Registered. Config written to {path}")
-        io.print(f"Run it with: eyes-of-aziz-bridge --env-file {path}")
-        registered += 1
+    if registered:
+        io.print("Run them with: eyes-of-aziz-bridge --all  (or --install-service to start them automatically)")
 
     io.print(f"\nDone -- registered {registered} camera(s).")
     return 0

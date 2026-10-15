@@ -268,3 +268,34 @@ def test_start_automatically_installs_the_service(tmp_path, account_client):
 
     assert installed == [tmp_path / "cameras"]
     assert b"Installed: starts at login." in page
+
+
+def test_register_adds_every_channel_of_a_recorder(tmp_path):
+    recorder = CameraDetails(
+        manufacturer="Acme", model="NVR8", rtsp_url="rtsp://nvr/ch1",
+        channels=("rtsp://nvr/ch1", "rtsp://nvr/ch2"),
+    )
+
+    class _Accounts(_FakeAccountClient):
+        def register_camera(self, bearer_token, device_id, firmware_version=None):
+            self.register_calls.append((bearer_token, device_id))
+            return {"device_id": device_id, "registration_token": "t"}
+
+    account_client = _Accounts("https://projectaziz.com")
+    app = create_app(
+        account_client_factory=lambda _backend_url: account_client,
+        scan_network_fn=lambda **_kwargs: [DEVICE],
+        probe_camera_fn=lambda *_args: recorder,
+        output_dir=tmp_path / "cameras",
+        report_status_fn=lambda _config: None,
+    )
+    client = app.test_client()
+    _login(client)
+    client.post("/scan")
+    client.post("/cameras/0/add", data={"username": "admin", "password": "pw"})
+
+    assert b"recorder with 2 cameras" in client.get("/cameras/0/confirm").data
+    client.post("/cameras/0/register", data={"device_id": "store", "all_channels": "1"})
+
+    assert [call[1] for call in account_client.register_calls] == ["store-ch1", "store-ch2"]
+    assert (tmp_path / "cameras" / "store-ch2.env").exists()

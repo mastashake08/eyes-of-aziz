@@ -120,3 +120,29 @@ def test_face_settings_default_to_faces_mode():
 def test_bad_face_settings_are_refused(extra):
     with pytest.raises(ConfigError):
         BridgeConfig.from_env(_base_env(**extra))
+
+
+def test_a_frigate_camera_needs_no_rtsp_url():
+    env = _base_env(
+        EYES_OF_AZIZ_SOURCE="frigate",
+        EYES_OF_AZIZ_FRIGATE_URL="http://frigate:5000",
+        EYES_OF_AZIZ_FRIGATE_CAMERA="driveway",
+        EYES_OF_AZIZ_MQTT_URL="mqtt://broker:1883",
+    )
+    del env["EYES_OF_AZIZ_RTSP_URL"]
+
+    config = BridgeConfig.from_env(env)
+
+    assert config.source == "frigate"
+    assert config.frigate_camera == "driveway"
+    assert config.frigate_topic_prefix == "frigate"
+
+
+def test_a_frigate_camera_needs_its_frigate_settings():
+    with pytest.raises(ConfigError, match="EYES_OF_AZIZ_FRIGATE_URL"):
+        BridgeConfig.from_env(_base_env(EYES_OF_AZIZ_SOURCE="frigate"))
+
+
+def test_an_unknown_source_is_refused():
+    with pytest.raises(ConfigError):
+        BridgeConfig.from_env(_base_env(EYES_OF_AZIZ_SOURCE="webcam"))

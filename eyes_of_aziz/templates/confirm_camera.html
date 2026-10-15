@@ -16,6 +16,11 @@
         <input type="text" id="device_id" name="device_id" placeholder="{{ default_id }}" value="{{ default_id }}">
         <p class="hint">This becomes its device ID with Project Aziz — pick something you'll recognize later.</p>
 
+        {% if details.is_recorder %}
+        <label class="checkbox"><input type="checkbox" name="all_channels" value="1" checked> This is a recorder with {{ details.channels | length }} cameras: add each one ({{ default_id }}-ch1, -ch2, …)</label>
+        <p class="hint">Unticked, only its first camera is added.</p>
+        {% endif %}
+
         <label for="location">Where is it?</label>
         <input type="text" id="location" name="location" value="{{ location or '' }}" placeholder="123 Main St, Louisville, KY — or 38.2527, -85.7585">
         <p class="hint">A street address, or latitude and longitude. Without it, matches from this camera can't be shown on a map.</p>

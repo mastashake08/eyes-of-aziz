@@ -237,3 +237,43 @@ def _fake_parse_location(text):
     if "not a place" in text:
         raise LocationError("Couldn't find that.")
     return parse_location(text)
+
+
+RECORDER = CameraDetails(
+    manufacturer="Acme",
+    model="NVR8",
+    rtsp_url="rtsp://192.168.1.60/ch1",
+    channels=("rtsp://192.168.1.60/ch1", "rtsp://192.168.1.60/ch2", "rtsp://192.168.1.60/ch3"),
+)
+
+
+class _CountingAccountClient(_FakeAccountClient):
+    def register_camera(self, bearer_token, device_id, firmware_version=None):
+        self.register_calls.append((bearer_token, device_id))
+        return {"device_id": device_id, "registration_token": f"token-{device_id}"}
+
+
+def test_run_wizard_adds_every_channel_of_a_recorder(tmp_path):
+    account_client = _CountingAccountClient("https://projectaziz.com")
+    prompts = ["", "person@example.com", "correct-password", "y", "admin", "cam-password",
+               "store",  # name
+               "",       # add all channels (default yes)
+               "38.2527, -85.7585"]
+    io = _io(tmp_path, prompts, account_client=account_client, probe_result=RECORDER)
+
+    assert run_wizard(io) == 0
+
+    assert [call[1] for call in account_client.register_calls] == ["store-ch1", "store-ch2", "store-ch3"]
+    ch2 = (tmp_path / "cameras" / "store-ch2.env").read_text()
+    assert "EYES_OF_AZIZ_RTSP_URL=rtsp://192.168.1.60/ch2" in ch2
+    assert "EYES_OF_AZIZ_LATITUDE=38.2527" in ch2
+
+
+def test_run_wizard_can_add_just_the_first_channel(tmp_path):
+    account_client = _CountingAccountClient("https://projectaziz.com")
+    prompts = ["", "person@example.com", "correct-password", "y", "admin", "cam-password", "store", "n", ""]
+    io = _io(tmp_path, prompts, account_client=account_client, probe_result=RECORDER)
+
+    assert run_wizard(io) == 0
+
+    assert [call[1] for call in account_client.register_calls] == ["store"]

@@ -96,9 +96,10 @@ class _FakeMedia:
         return self._profiles
 
     async def GetStreamUri(self, params):
-        assert params["ProfileToken"] == self._profiles[0].token
         assert params["StreamSetup"] == {"Stream": "RTP-Unicast", "Transport": {"Protocol": "RTSP"}}
-        return SimpleNamespace(Uri=self._stream_uri)
+        if params["ProfileToken"] == self._profiles[0].token:
+            return SimpleNamespace(Uri=self._stream_uri)
+        return SimpleNamespace(Uri=f"rtsp://192.168.1.50/{params['ProfileToken']}")
 
 
 class _FakeONVIFCamera:
@@ -199,3 +200,37 @@ def test_probe_camera_always_closes_the_connection(monkeypatch):
         discovery.probe_camera(DEVICE, "admin", "wrong-password")
 
     assert cameras[0].closed
+
+
+def _profile(token, source):
+    return SimpleNamespace(token=token, VideoSourceConfiguration=SimpleNamespace(SourceToken=source))
+
+
+def test_probe_camera_finds_one_stream_per_channel_on_a_recorder(monkeypatch):
+    profiles = [
+        _profile("ch1-main", "VideoSource_1"),
+        _profile("ch1-sub", "VideoSource_1"),
+        _profile("ch2-main", "VideoSource_2"),
+        _profile("ch3-main", "VideoSource_3"),
+    ]
+    _FakeONVIFCamera.media_cls = staticmethod(lambda: _FakeMedia(profiles=profiles))
+    monkeypatch.setattr(discovery, "ONVIFCamera", _FakeONVIFCamera)
+
+    details = discovery.probe_camera(DEVICE, "admin", "swordfish")
+
+    assert details.is_recorder
+    assert details.channels == (
+        "rtsp://192.168.1.50/stream1",
+        "rtsp://192.168.1.50/ch2-main",
+        "rtsp://192.168.1.50/ch3-main",
+    )
+    assert details.rtsp_url == details.channels[0]
+
+
+def test_a_single_camera_is_not_a_recorder(monkeypatch):
+    monkeypatch.setattr(discovery, "ONVIFCamera", _FakeONVIFCamera)
+
+    details = discovery.probe_camera(DEVICE, "admin", "swordfish")
+
+    assert not details.is_recorder
+    assert details.channels == ("rtsp://192.168.1.50/stream1",)
