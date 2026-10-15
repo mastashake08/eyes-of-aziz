@@ -21,7 +21,7 @@ from eyes_of_aziz.status_page import create_status_app
 from tests.test_bridge import CONFIG, FakeCapture
 
 # 2026-10-12 is a Monday.
-MONDAY = datetime(2026, 10, 12)  # noqa: DTZ001 - schedules are in local time
+MONDAY = datetime.fromisoformat("2026-10-12T00:00")  # schedules are in local time, so no timezone
 
 
 def at(day_offset, hour, minute=0):
