@@ -53,19 +53,25 @@ def resolve_env_file(explicit_path: str | None, search_dir: Path = Path(".")) ->
 
 
 def self_test() -> int:
-    """Loads the bundled face detector and runs it once. Used after
-    packaging, so a build missing the model fails there, not for users."""
+    """Loads the bundled face detector and renders the status page once.
+    Used after packaging, so a build missing the model or the page's
+    templates fails there, not for users."""
     import numpy as np
 
     from . import __version__
     from .faces import FaceDetector
 
+    from .status_page import create_status_app
+
     try:
         FaceDetector().detect(np.zeros((240, 320, 3), dtype=np.uint8))
+        page = create_status_app(lambda: []).test_client().get("/")
+        if page.status_code != 200:
+            raise RuntimeError(f"status page returned {page.status_code}")
     except Exception as exc:  # noqa: BLE001 - reporting any failure is the point
         print(f"eyes-of-aziz {__version__}: self-test FAILED: {exc}")
         return 1
-    print(f"eyes-of-aziz {__version__}: self-test passed (face detector loaded)")
+    print(f"eyes-of-aziz {__version__}: self-test passed (face detector and status page)")
     return 0
 
 
