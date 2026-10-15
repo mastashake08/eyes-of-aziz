@@ -41,6 +41,11 @@ jobs:
       - name: Build executables
         run: pyinstaller packaging/eyes_of_aziz.spec --distpath dist --noconfirm
 
+      # Fails the build if the packaged bridge can't load its face model.
+      - name: Self-test the packaged bridge
+        shell: bash
+        run: ./dist/eyes-of-aziz-bridge --self-test
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:

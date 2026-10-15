@@ -51,3 +51,12 @@ def test_no_config_anywhere_falls_through_without_error(tmp_path):
 
     assert path is None
     assert error is None
+
+
+def test_self_test_loads_the_face_detector(monkeypatch, capsys):
+    from eyes_of_aziz import __main__
+
+    monkeypatch.setattr("sys.argv", ["eyes-of-aziz-bridge", "--self-test"])
+
+    assert __main__.main() == 0
+    assert "self-test passed" in capsys.readouterr().out
