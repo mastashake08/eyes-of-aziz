@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import secrets
 from .account_client import AccountClient, AccountError
 from .api_client import BackendClient, BackendError
 from .config import BridgeConfig
@@ -45,15 +46,25 @@ def write_camera_env_file(
     registration_token: str,
     rtsp_url: str,
     location: tuple[float, float] | None = None,
+    store_secrets: Callable[[str, dict[str, str]], bool] = secrets.store,
 ) -> Path:
+    """Writes the camera's config. Its registration token and RTSP URL (which
+    usually includes the camera's password) go to the system keychain where
+    there is one, and into this file otherwise."""
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{device_id}.env"
+    secret_values = {
+        "EYES_OF_AZIZ_REGISTRATION_TOKEN": registration_token,
+        "EYES_OF_AZIZ_RTSP_URL": rtsp_url,
+    }
     lines = [
         f"EYES_OF_AZIZ_BACKEND_URL={backend_url}",
         f"EYES_OF_AZIZ_DEVICE_ID={device_id}",
-        f"EYES_OF_AZIZ_REGISTRATION_TOKEN={registration_token}",
-        f"EYES_OF_AZIZ_RTSP_URL={rtsp_url}",
     ]
+    if store_secrets(device_id, secret_values):
+        lines.append(f"EYES_OF_AZIZ_SECRETS={secrets.KEYCHAIN}")
+    else:
+        lines += [f"{var}={value}" for var, value in secret_values.items()]
     if location is not None:
         lines += [f"EYES_OF_AZIZ_LATITUDE={location[0]}", f"EYES_OF_AZIZ_LONGITUDE={location[1]}"]
     path.write_text("\n".join(lines + [""]))

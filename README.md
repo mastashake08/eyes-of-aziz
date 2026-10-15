@@ -22,6 +22,11 @@ neither does the rest of the scene around a face. The backend only keeps an uplo
 an active case; everything else is discarded right after the match check. The bridge doesn't
 record anything locally — it only ever holds one frame in memory at a time.
 
+On macOS and Windows, each camera's registration token and stream address (which usually
+includes the camera's password) are kept in the system keychain (Keychain / Credential Manager),
+not in its config file; the file just says `EYES_OF_AZIZ_SECRETS=keychain`. On Linux and in
+Docker they stay in the config file, readable only by its owner.
+
 Face detection uses OpenCV's [YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)
 model (MIT licensed), bundled in `eyes_of_aziz/models/`. It runs in real time on an ordinary CPU,
 including a Raspberry Pi 4.
@@ -38,7 +43,8 @@ No Python install needed — grab the latest build for your OS from
 [**Releases**](https://github.com/mastashake08/eyes-of-aziz/releases/latest), unzip it, and run
 `eyes-of-aziz-setup` to open the setup dashboard in your browser.
 
-These builds aren't code-signed yet, so your OS will warn you the first time you run one:
+Until the builds are code-signed (see [Building the desktop apps](#building-the-desktop-apps)),
+your OS will warn you the first time you run one:
 
 - **Windows**: SmartScreen says "Windows protected your PC" — click **More info**, then **Run
   anyway**.
@@ -136,6 +142,13 @@ whether it's online or can't reach the camera, when it last sent a face and repo
 counts, a missing location, and the last error. Like the setup dashboard, it's only reachable
 from the same machine.
 
+### Updates
+
+The bridge and setup dashboard check [Releases](https://github.com/mastashake08/eyes-of-aziz/releases)
+once a day. When there's a newer version, the status page and dashboard show a banner with a
+download link, and the bridge logs it. Nothing is downloaded or installed automatically. Set
+`EYES_OF_AZIZ_UPDATE_CHECK=0` to turn the check off.
+
 `.env.example` documents optional tuning (capture interval, face detection, heartbeat, JPEG
 quality, retry/backoff settings) that applies to every camera.
 
@@ -217,3 +230,7 @@ run them). PyInstaller doesn't cross-compile — this only builds for whatever O
 you push a `v*.*.*` tag, also creates a GitHub Release with each platform's build zipped up and
 attached — that's the Releases page linked above, and what the website's download link should
 point at.
+
+Builds are signed (and on macOS, notarized) once the signing secrets listed at the top of that
+workflow are added to the repo's Actions secrets; without them the builds are unsigned. Each
+build runs `--self-test` after signing.

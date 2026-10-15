@@ -16,6 +16,13 @@
             {% block header_actions %}{% endblock %}
         </header>
 
+        {% if update %}
+            <div class="update-banner">
+                Eyes Of Aziz {{ update.version }} is available (you have {{ version }}).
+                <a href="{{ update.url }}" target="_blank" rel="noopener">Download it</a>
+            </div>
+        {% endif %}
+
         {% block content %}{% endblock %}
     </div>
 </body>

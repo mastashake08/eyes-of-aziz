@@ -14,6 +14,7 @@ from flask import Flask, jsonify, render_template
 from werkzeug.serving import make_server
 
 from . import __version__
+from .updates import Release
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,14 @@ def _ago(iso: str | None) -> str:
     return f"{seconds // 3600}h ago"
 
 
-def create_status_app(get_status: Callable[[], list[dict]]) -> Flask:
+def create_status_app(
+    get_status: Callable[[], list[dict]], get_update: Callable[[], Release | None] = lambda: None
+) -> Flask:
     app = Flask(__name__)
+
+    @app.context_processor
+    def update_banner():
+        return {"update": get_update(), "version": __version__}
 
     @app.get("/")
     def index():
@@ -52,7 +59,12 @@ def create_status_app(get_status: Callable[[], list[dict]]) -> Flask:
 
     @app.get("/status.json")
     def status_json():
-        return jsonify(version=__version__, cameras=get_status())
+        update = get_update()
+        return jsonify(
+            version=__version__,
+            update_available=update.version if update else None,
+            cameras=get_status(),
+        )
 
     return app
 
@@ -60,8 +72,14 @@ def create_status_app(get_status: Callable[[], list[dict]]) -> Flask:
 class StatusServer:
     """Serves the status page on a background thread until stop()."""
 
-    def __init__(self, get_status: Callable[[], list[dict]], port: int = 5152, host: str = "127.0.0.1") -> None:
-        self._server = make_server(host, port, create_status_app(get_status), threaded=True)
+    def __init__(
+        self,
+        get_status: Callable[[], list[dict]],
+        port: int = 5152,
+        host: str = "127.0.0.1",
+        get_update: Callable[[], Release | None] = lambda: None,
+    ) -> None:
+        self._server = make_server(host, port, create_status_app(get_status, get_update), threaded=True)
         self._thread = threading.Thread(target=self._server.serve_forever, name="status-page", daemon=True)
 
     @property

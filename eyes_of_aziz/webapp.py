@@ -19,7 +19,7 @@ from threading import Timer
 
 from flask import Flask, redirect, render_template, request, url_for
 
-from . import service
+from . import __version__, service
 from .account_client import AccountClient, AccountError
 from .config import BridgeConfig
 from .discovery import (
@@ -37,6 +37,7 @@ from .setup import (
     slugify_device_id,
     streams_to_register,
 )
+from .updates import Release, UpdateChecker
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,13 @@ def create_app(
     parse_location_fn: Callable[[str], tuple[float, float] | None] = parse_location,
     report_status_fn: Callable[[BridgeConfig], None] = report_status,
     install_service_fn: Callable[[Path], str] = service.install,
+    get_update: Callable[[], Release | None] = lambda: None,
 ) -> Flask:
     app = Flask(__name__)
+
+    @app.context_processor
+    def update_banner():
+        return {"update": get_update(), "version": __version__}
     # Only used to sign Flask's own flash-message/session machinery, which
     # this app doesn't otherwise rely on -- all real state lives in `state`
     # below, server-side, so this key never protects anything sensitive.
@@ -280,7 +286,8 @@ def _default_device_id(state: AppState, index: int) -> str:
 
 
 def run_web(host: str = "127.0.0.1", port: int = 5151, open_browser: bool = True) -> None:
-    app = create_app()
+    updates = UpdateChecker().start()
+    app = create_app(get_update=lambda: updates.available)
 
     if open_browser:
         Timer(1.0, lambda: webbrowser.open(f"http://{host}:{port}/")).start()
