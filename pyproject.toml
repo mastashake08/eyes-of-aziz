@@ -36,4 +36,4 @@ eyes-of-aziz-setup = "eyes_of_aziz.setup:main"
 include = ["eyes_of_aziz*"]
 
 [tool.setuptools.package-data]
-eyes_of_aziz = ["templates/*.html", "static/*.css"]
+eyes_of_aziz = ["templates/*.html", "static/*.css", "models/*.onnx"]

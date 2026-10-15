@@ -33,9 +33,15 @@ setup_analysis = Analysis(  # noqa: F821 - injected by PyInstaller
     pathex=[str(REPO_ROOT)],
     datas=setup_datas,
 )
+# The bridge detects faces before uploading (faces.py), so it needs the model.
+bridge_datas = [
+    (str(REPO_ROOT / "eyes_of_aziz" / "models"), "eyes_of_aziz/models"),
+]
+
 bridge_analysis = Analysis(  # noqa: F821
     [str(REPO_ROOT / "packaging" / "bridge_entry.py")],
     pathex=[str(REPO_ROOT)],
+    datas=bridge_datas,
 )
 
 setup_pyz = PYZ(setup_analysis.pure)  # noqa: F821

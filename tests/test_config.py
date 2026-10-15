@@ -102,3 +102,21 @@ def test_location_is_optional():
 def test_bad_location_or_heartbeat_settings_are_refused(extra):
     with pytest.raises(ConfigError):
         BridgeConfig.from_env(_base_env(**extra))
+
+
+def test_face_settings_default_to_faces_mode():
+    config = BridgeConfig.from_env(_base_env())
+
+    assert config.upload_mode == "faces"
+    assert config.max_faces_per_frame == 5
+
+
+@pytest.mark.parametrize("extra", [
+    {"EYES_OF_AZIZ_UPLOAD_MODE": "everything"},
+    {"EYES_OF_AZIZ_FACE_SCORE_THRESHOLD": "0"},
+    {"EYES_OF_AZIZ_MAX_FACES_PER_FRAME": "0"},
+    {"EYES_OF_AZIZ_MOTION_THRESHOLD": "2"},
+])
+def test_bad_face_settings_are_refused(extra):
+    with pytest.raises(ConfigError):
+        BridgeConfig.from_env(_base_env(**extra))

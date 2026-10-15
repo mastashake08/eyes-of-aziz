@@ -14,6 +14,9 @@ CONFIG = BridgeConfig(
     capture_interval_seconds=0,
     reconnect_backoff_seconds=0,
     max_reconnect_backoff_seconds=0,
+    # These tests are about the capture loop, so they upload whole frames;
+    # faces mode is tested separately below.
+    upload_mode="frames",
 )
 
 A_FRAME = np.zeros((4, 4, 3), dtype=np.uint8)
@@ -162,3 +165,87 @@ def test_a_rejected_heartbeat_stops_the_bridge(monkeypatch):
     bridge.run()
 
     assert client.send_frame.call_count == 0
+
+
+from pathlib import Path
+
+import cv2
+
+from eyes_of_aziz.faces import Face, FaceDetector, MotionGate
+
+FACES_CONFIG = BridgeConfig(**{**CONFIG.__dict__, "upload_mode": "faces", "motion_threshold": 0})
+
+
+class FakeDetector:
+    def __init__(self, faces):
+        self.faces = faces
+        self.calls = 0
+
+    def detect(self, _frame):
+        self.calls += 1
+        return list(self.faces)
+
+
+def _faces_bridge(monkeypatch, reads, detector, client, config=FACES_CONFIG, motion_gate=None):
+    bridge = CameraBridge(config, client=client, detector=detector, motion_gate=motion_gate)
+    capture = FakeCapture(reads, on_stop=bridge.stop)
+    monkeypatch.setattr("eyes_of_aziz.bridge.cv2.VideoCapture", lambda _url: capture)
+    return bridge
+
+
+BIG_FRAME = np.full((240, 320, 3), 128, dtype=np.uint8)
+
+
+def test_frames_without_faces_are_not_uploaded(monkeypatch):
+    client = MagicMock()
+    bridge = _faces_bridge(monkeypatch, [(True, BIG_FRAME)] * 3, FakeDetector([]), client)
+
+    bridge.run()
+
+    assert client.send_frame.call_count == 0
+    assert bridge.stats == {"frames_captured": 3, "frames_with_faces": 0, "uploads": 0}
+
+
+def test_each_face_is_uploaded_as_its_own_crop(monkeypatch):
+    client = MagicMock()
+    faces = [Face(10, 10, 60, 60, 0.9), Face(150, 20, 50, 50, 0.9)]
+    bridge = _faces_bridge(monkeypatch, [(True, BIG_FRAME)], FakeDetector(faces), client)
+
+    bridge.run()
+
+    assert client.send_frame.call_count == 2
+    crop = cv2.imdecode(np.frombuffer(client.send_frame.call_args_list[0].args[0], np.uint8), cv2.IMREAD_COLOR)
+    assert min(crop.shape[:2]) >= 160  # small faces are scaled up for the search
+    assert bridge.stats["frames_with_faces"] == 1
+
+
+def test_faces_per_frame_are_capped(monkeypatch):
+    client = MagicMock()
+    config = BridgeConfig(**{**FACES_CONFIG.__dict__, "max_faces_per_frame": 2})
+    faces = [Face(i * 30, 10, 25, 25, 0.9) for i in range(5)]
+    bridge = _faces_bridge(monkeypatch, [(True, BIG_FRAME)], FakeDetector(faces), client, config=config)
+
+    bridge.run()
+
+    assert client.send_frame.call_count == 2
+
+
+def test_an_unchanged_scene_skips_face_detection(monkeypatch):
+    client = MagicMock()
+    detector = FakeDetector([])
+    gate = MotionGate(threshold=0.01, recheck_every=100)
+    bridge = _faces_bridge(monkeypatch, [(True, BIG_FRAME)] * 4, detector, client, motion_gate=gate)
+
+    bridge.run()
+
+    # Only the first frame is looked at; the identical ones after it are skipped.
+    assert detector.calls == 1
+
+
+def test_the_real_detector_finds_every_face_in_a_photo():
+    photo = cv2.imread(str(Path(__file__).parent / "fixtures" / "three-faces.jpg"))
+
+    faces = FaceDetector().detect(photo)
+
+    assert len(faces) == 3
+    assert FaceDetector().detect(np.zeros((240, 320, 3), np.uint8)) == []
