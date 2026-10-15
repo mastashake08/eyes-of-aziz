@@ -60,12 +60,11 @@ def self_test() -> int:
 
     from . import __version__
     from .faces import FaceDetector
-
     from .status_page import create_status_app
 
     try:
         FaceDetector().detect(np.zeros((240, 320, 3), dtype=np.uint8))
-        page = create_status_app(lambda: []).test_client().get("/")
+        page = create_status_app(list).test_client().get("/")
         if page.status_code != 200:
             raise RuntimeError(f"status page returned {page.status_code}")
     except Exception as exc:  # noqa: BLE001 - reporting any failure is the point
