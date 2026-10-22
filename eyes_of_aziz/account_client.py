@@ -43,9 +43,23 @@ class AccountClient:
         """Registers a new camera_bridge device under the logged-in account.
         Returns the backend's device config, including registration_token.
         """
-        payload = {"device_id": device_id, "device_type": "camera_bridge"}
+        return self.register_device(bearer_token, device_id, "camera_bridge", firmware_version)
+
+    def register_device(
+        self,
+        bearer_token: str,
+        device_id: str,
+        device_type: str,
+        firmware_version: str | None = None,
+        label: str | None = None,
+    ) -> dict:
+        """Registers a device of any type (e.g. eoa_bridge) under the
+        logged-in account. Returns the backend's device config."""
+        payload = {"device_id": device_id, "device_type": device_type}
         if firmware_version:
             payload["firmware_version"] = firmware_version
+        if label:
+            payload["label"] = label
 
         response = self._session.post(
             f"{self._backend_url}/api/field-devices/register",
@@ -55,7 +69,7 @@ class AccountClient:
         )
 
         if not response.ok:
-            raise AccountError(f"Camera registration failed: {self._error_message(response)}")
+            raise AccountError(f"Registration failed: {self._error_message(response)}")
 
         return response.json()["device"]
 

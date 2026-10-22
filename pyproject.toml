@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eyes-of-aziz"
-version = "0.2.0"
+version = "0.3.0"
 description = "Reference bridge agent that pulls frames from an RTSP camera and forwards them to Project Aziz's Eyes Of Aziz camera network for missing-person face matching."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,10 +29,17 @@ dev = [
 build = [
     "pyinstaller>=6.10,<7",
 ]
+# The Eyes Of Aziz Bridge's mesh side (eyes_of_aziz.mesh). Reticulum 1.3+
+# ships rnsd, lxmd's dependency and rnsh.
+mesh = [
+    "rns>=1.3,<2",
+    "lxmf>=1.0,<2",
+]
 
 [project.scripts]
 eyes-of-aziz-bridge = "eyes_of_aziz.__main__:main"
 eyes-of-aziz-setup = "eyes_of_aziz.setup:main"
+eyes-of-aziz-mesh = "eyes_of_aziz.mesh.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["eyes_of_aziz*"]
