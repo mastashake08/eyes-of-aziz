@@ -149,7 +149,7 @@ def test_reticulum_config_is_a_transport_node_with_lora(tmp_path):
     text = rns_config.render_reticulum_config(rnode_port=ports[0])
     assert "enable_transport = Yes" in text
     assert "listen_on = 0.0.0.0" in text and "port = 4242" in text
-    assert "remote = projectaziz.com" in text
+    assert "remote = rns.beleth.net" in text and "projectaziz.com" not in text
     assert f"port = {ports[0]}" in text and "spreadingfactor = 8" in text
     assert "RNodeInterface" not in rns_config.render_reticulum_config(rnode_port=None)
 

@@ -11,7 +11,9 @@ SERIAL_BY_ID = Path("/dev/serial/by-id")
 # Heltec V3 (CP2102), V4 and other ESP32-S3 boards (native USB), CH340/CH9102.
 _RNODE_CHIPS = ("CP210", "CH34", "CH91", "USB_JTAG", "Espressif", "RNode")
 
-DEFAULT_BACKBONES = (("projectaziz.com", 4242), ("rns.beleth.net", 4242))
+# The same internet backbone the mobile app and repeater bridges use
+# (project-aziz-mobile bridge.service.ts DEFAULT_BACKBONES) - change together.
+DEFAULT_BACKBONES = (("rns.beleth.net", 4242),)
 LISTEN_PORT = 4242
 # Same radio settings as the app, the Aziz Node and the repeater bridges.
 RADIO = {"frequency": 915000000, "bandwidth": 125000, "txpower": 17, "spreadingfactor": 8, "codingrate": 5}
