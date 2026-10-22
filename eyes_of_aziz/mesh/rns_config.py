@@ -77,8 +77,8 @@ def render_reticulum_config(
 
 
 def render_lxmd_config(node_name: str, announce_interval_minutes: int = 30) -> str:
-    """A propagation node: stores messages for offline recipients and peers
-    with other propagation nodes, so messages reach phones that sync here."""
+    """A propagation node: stores messages for offline recipients until their
+    phones sync here."""
     return "\n".join([
         "# Eyes Of Aziz Bridge - LXMF propagation node.",
         "",
@@ -87,8 +87,15 @@ def render_lxmd_config(node_name: str, announce_interval_minutes: int = 30) -> s
         f"  node_name = {node_name}",
         "  announce_at_start = yes",
         f"  announce_interval = {announce_interval_minutes}",
-        "  autopeer = yes",
-        "  autopeer_maxdepth = 6",
+        "  # Serve this bridge's own phones; don't join the public propagation",
+        "  # network - peering means generating proof-of-work keys for every node",
+        "  # discovered, which kept a Pi 3 at full load. Add other Aziz bridges",
+        "  # as static_peers to share messages between them.",
+        "  autopeer = no",
+        "  # The lowest stamp cost Reticulum allows, so submitting a message for",
+        "  # an offline phone costs a Pi 3 seconds rather than minutes.",
+        "  propagation_stamp_cost_target = 13",
+        "  propagation_stamp_cost_flexibility = 0",
         "  # MB of messages kept for offline recipients.",
         "  message_storage_limit = 500",
         "",

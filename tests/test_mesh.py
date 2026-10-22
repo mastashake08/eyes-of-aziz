@@ -158,6 +158,7 @@ def test_lxmd_config_runs_a_propagation_node():
     text = rns_config.render_lxmd_config("Eyes Of Aziz Bridge pi")
     assert "enable_node = yes" in text
     assert "node_name = Eyes Of Aziz Bridge pi" in text
+    assert "autopeer = no" in text  # peering with the public network swamps a Pi 3
 
 
 def test_write_configs_keeps_existing_ones(tmp_path, capsys):
