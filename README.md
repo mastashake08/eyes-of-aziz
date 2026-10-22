@@ -184,6 +184,45 @@ If setup finds a network video recorder, it sees each connected camera as a sepa
 offers to add all of them, named `<name>-ch1`, `<name>-ch2`, and so on, sharing one location. Each
 channel is its own camera in Project Aziz and its own config under `cameras/`.
 
+## Eyes Of Aziz Bridge (Raspberry Pi)
+
+A Raspberry Pi becomes an **Eyes Of Aziz Bridge**: a node on the Aziz mesh that phones, watches and LoRa radios can reach, with or without cameras.
+
+| | Pi 3 | Pi 4 / 5 |
+|---|---|---|
+| Reticulum transport node (LAN, internet backbones, LoRa over USB) | ✓ | ✓ |
+| Propagation node: holds messages for phones that are offline | ✓ | ✓ |
+| Its own LXMF address: messages, commands, heartbeats to Project Aziz | ✓ | ✓ |
+| Remote shell over Reticulum (`rnsh`) | ✓ | ✓ |
+| Camera bridge (face detection) | – | ✓ |
+
+Install it, as the user it should run as (not root):
+
+```
+curl -fsSL https://raw.githubusercontent.com/mastashake08/eyes-of-aziz/main/install/install-pi.sh | bash
+```
+
+The installer:
+- Sets up `rnsd`, `lxmd`, `eyes-of-aziz-mesh` and `rnsh` as services.
+- Signs in to Project Aziz and registers the Pi as a bridge, so it shows up in the app with its addresses and link status.
+- On a Pi 4/5, also installs the camera bridge.
+
+It's safe to run again: it upgrades in place and keeps its configs and identity. To use a LoRa radio, plug in a Heltec in node mode (or any RNode) before installing.
+
+Using it, on the Pi:
+
+```
+eyes-of-aziz-mesh address                 # its LXMF address
+eyes-of-aziz-mesh send <address> hello    # message someone
+eyes-of-aziz-mesh inbox                   # what it has received
+eyes-of-aziz-mesh allow <your address>    # let your phone run /sh commands
+eyes-of-aziz-mesh status
+```
+
+Anyone can message the bridge `/ping` and `/help`. Signed messages from allowed addresses can also send `/sh <command>`.
+
+If a recipient is offline, the message waits on the bridge's propagation node until their phone syncs. The propagation node only serves this bridge's own users: it doesn't join the public propagation network, because peering there keeps a Pi 3 at full load.
+
 ## Docker (Raspberry Pi, NAS)
 
 An image for amd64 and arm64 is published as `ghcr.io/mastashake08/eyes-of-aziz` with each
